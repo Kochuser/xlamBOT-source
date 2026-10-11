@@ -1,12 +1,28 @@
 import unittest
 from unittest.mock import patch
 import numpy as np
-from state_finder import get_action_state
+from state_finder import get_action_state, get_state
 from test_current_results import screen
 from test_onboarding import age_frame
 
 
 class ActionStateTests(unittest.TestCase):
+    def test_confirmed_result_bypasses_first_run_scans_before_observation_expires(self):
+        frame = screen()
+        with patch('onboarding.onboarding_screen', side_effect=AssertionError('expensive scan')):
+            self.assertEqual(get_state(frame), 'end_trio_showdown_3')
+
+    def test_result_control_does_not_override_disconnect_modal(self):
+        with patch('disconnect_dialog.idle_disconnect_reload_position', return_value=(200, 300)):
+            self.assertEqual(get_state(screen()), 'idle_disconnect')
+
+    def test_proceed_without_placement_cannot_authorize_a_result(self):
+        frame = screen()
+        frame[:130, :400] = 0
+        with patch('onboarding.onboarding_screen', return_value=True) as classify:
+            self.assertEqual(get_state(frame), 'onboarding')
+        classify.assert_called_once()
+
     def test_current_result_and_age_guide_survive_menu_scaling(self):
         self.assertEqual(get_action_state(screen()), 'end_trio_showdown_3')
         self.assertEqual(get_action_state(age_frame()), 'onboarding')
