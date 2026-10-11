@@ -71,6 +71,57 @@ class DiscoveryTests(unittest.TestCase):
 
 
 class VideoRecoveryTests(unittest.TestCase):
+    def package_controller(self, package='com.supercell.brawlstars'):
+        controller = WindowController.__new__(WindowController)
+        controller.BRAWL_STARS_PACKAGE = package
+        controller.device = Mock()
+        controller.device.shell.return_value = ''
+        return controller
+
+    def test_foreground_change_between_check_and_save_cannot_adopt_launcher(self):
+        for method in ('brawl_stars_process_alive', 'is_brawl_stars_running'):
+            controller = self.package_controller()
+            scope = WindowController._adopt_foreground_package.__globals__
+            focus = Mock(side_effect=['bsd.suitcase.nexusv2', 'com.android.launcher3'])
+            save = Mock()
+            with patch.dict(scope, foreground_package=focus, save_dict_as_toml=save,
+                            invalidate_toml_cache=Mock(), load_toml_as_dict=Mock(return_value={'language': 'en'})):
+                self.assertTrue(getattr(controller, method)())
+            self.assertEqual(controller.BRAWL_STARS_PACKAGE, 'bsd.suitcase.nexusv2')
+            self.assertEqual(focus.call_count, 1)
+            self.assertEqual(save.call_args.args[0], {'language': 'en', 'brawl_stars_package': 'bsd.suitcase.nexusv2'})
+
+    def test_automatic_adoption_rejects_launcher_even_when_misconfigured(self):
+        controller = self.package_controller()
+        scope = WindowController._adopt_foreground_package.__globals__
+        with patch.dict(scope, foreground_package=Mock(return_value='com.android.launcher3'),
+                        save_dict_as_toml=Mock(), load_toml_as_dict=Mock(return_value={'brawl_stars_package': 'com.android.launcher3'})):
+            self.assertFalse(controller._adopt_foreground_package())
+            scope['save_dict_as_toml'].assert_not_called()
+            self.assertFalse(scope['is_brawl_stars_package']('com.android.launcher3'))
+
+    def test_corrupted_launcher_target_is_repaired_only_with_one_installed_game(self):
+        controller = self.package_controller('com.android.launcher3')
+        controller.device.shell.return_value = 'package:com.android.launcher3\npackage:com.supercell.brawlstars\n'
+        controller._adopt_foreground_package = Mock(return_value=True)
+        controller._repair_system_package()
+        controller._adopt_foreground_package.assert_called_once_with('com.supercell.brawlstars')
+        for installed in ('package:com.android.launcher3\n', 'package:com.supercell.brawlstars\npackage:bsd.suitcase.nexusv2\n'):
+            controller.device.shell.return_value = installed
+            controller._adopt_foreground_package.reset_mock()
+            with self.assertRaises(ValueError):
+                controller._repair_system_package()
+            controller._adopt_foreground_package.assert_not_called()
+
+    def test_configured_custom_game_is_not_replaced_or_repaired(self):
+        controller = self.package_controller('custom.game')
+        controller._repair_system_package()
+        controller.device.shell.assert_not_called()
+        scope = WindowController.is_brawl_stars_running.__globals__
+        with patch.dict(scope, foreground_package=Mock(return_value='custom.game'),
+                        load_toml_as_dict=Mock(return_value={'brawl_stars_package': 'custom.game'})):
+            self.assertTrue(controller.is_brawl_stars_running())
+
     def test_failed_process_or_foreground_query_is_not_game_absence(self):
         controller=WindowController.__new__(WindowController)
         controller.BRAWL_STARS_PACKAGE='com.supercell.brawlstars';controller.device=Mock()
