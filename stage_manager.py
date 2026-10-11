@@ -75,6 +75,7 @@ class StageManager:
             'daily_reward': self.dismiss_daily_reward,
             'rating_dialog': self.dismiss_rating_dialog,
             'seasonal_announcement': self.dismiss_seasonal_announcement,
+            'brawler_blast': self.fire_brawler_blast,
             'team_panel': self.close_team_panel,
             'side_menu': self.close_side_menu,
             'club_suggestion': self.close_club_suggestion,
@@ -927,6 +928,21 @@ class StageManager:
         self._team_panel_last_click = now
         self.window_controller.click(*position, already_include_ratio=True, delay=.15)
 
+
+    def fire_brawler_blast(self):
+        if self._should_stop() or self._should_pause():
+            return
+        now = time.monotonic()
+        if now-getattr(self, '_blast_last_tap', -100)<1.5:
+            return
+        from brawler_blast import brawler_blast_fire_position
+        position = brawler_blast_fire_position(self.window_controller.screenshot())
+        fresh = getattr(self.window_controller, 'frame_is_fresh', lambda: True)
+        if position is None or not fresh() or self._should_stop() or self._should_pause():
+            return
+        self.window_controller.release_all_inputs()
+        self.window_controller.click(*position, already_include_ratio=True)
+        self._blast_last_tap = now
 
     def dismiss_seasonal_announcement(self):
         if self._should_stop() or self._should_pause():

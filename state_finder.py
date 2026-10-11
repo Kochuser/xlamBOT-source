@@ -172,6 +172,9 @@ def get_in_game_state(image):
         if club_suggestion_close_position(image) is not None:
             return "club_suggestion"
         from seasonal_rewards import seasonal_announcement_dismiss_position
+        from brawler_blast import brawler_blast_fire_position
+        if brawler_blast_fire_position(image) is not None:
+            return 'brawler_blast'
         if seasonal_announcement_dismiss_position(image) is not None:
             return "seasonal_announcement"
         from screen_evidence import daily_reward
