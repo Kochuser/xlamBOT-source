@@ -83,11 +83,11 @@ def daily_reward(frame):
 
 
 def coin_reward(frame):
-    if _find(frame,COINS,270,(.34,.08,.67,.26),threshold=.9) is None:
-        return False
     h,w=frame.shape[:2]
     hsv=cv2.cvtColor(frame,cv2.COLOR_RGB2HSV)
     blue=cv2.inRange(hsv,np.array([100,110,100]),np.array([125,255,255]))
     crop=hsv[round(h*.25):round(h*.78),round(w*.3):round(w*.7)]
     gold=cv2.inRange(crop,np.array([15,150,150]),np.array([40,255,255]))
-    return np.mean(blue>0)>.65 and np.mean(gold>0)>.14
+    # Reject scenery before searching five scales of the receipt caption.
+    return (np.mean(blue>0)>.65 and np.mean(gold>0)>.14 and
+            _find(frame,COINS,270,(.34,.08,.67,.26),threshold=.9) is not None)

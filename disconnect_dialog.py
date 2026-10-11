@@ -39,12 +39,14 @@ def idle_disconnect_reload_position(frame):
     if frame is None or frame.ndim != 3 or frame.shape[2] != 3:
         return None
     title_score, _ = _match(frame, TITLE, (.18, .28, .58, .49))
-    reload_score, position = _match(frame, RELOAD, (.18, .48, .48, .69))
-    if title_score < .84 or reload_score < .78:
-        title_score, _ = _match(frame, RUSSIAN_TITLE, (.24,.33,.76,.47),(1280,720))
-        reload_score, position = _match(frame, RUSSIAN_RELOAD, (.24,.55,.48,.67),(1280,720))
-        if title_score >= .90 and reload_score >= .90:
+    if title_score >= .84:
+        reload_score, position = _match(frame, RELOAD, (.18, .48, .48, .69))
+        if reload_score >= .78:
             return position
-        from rejoin_dialog import rejoin_reload_position
-        return rejoin_reload_position(frame)
-    return position
+    title_score, _ = _match(frame, RUSSIAN_TITLE, (.24,.33,.76,.47),(1280,720))
+    if title_score >= .90:
+        reload_score, position = _match(frame, RUSSIAN_RELOAD, (.24,.55,.48,.67),(1280,720))
+        if reload_score >= .90:
+            return position
+    from rejoin_dialog import rejoin_reload_position
+    return rejoin_reload_position(frame)
