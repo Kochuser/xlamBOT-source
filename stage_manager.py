@@ -74,6 +74,7 @@ class StageManager:
             'new_brawler': self.dismiss_new_brawler,
             'daily_reward': self.dismiss_daily_reward,
             'rating_dialog': self.dismiss_rating_dialog,
+            'team_invite': self.reject_team_invite,
             'seasonal_announcement': self.dismiss_seasonal_announcement,
             'brawler_blast': self.fire_brawler_blast,
             'team_panel': self.close_team_panel,
@@ -83,6 +84,8 @@ class StageManager:
             'popup': self.close_pop_up,
             'match': lambda: 0,
             'match_making': lambda: 0,
+            'loading': lambda: 0,
+            'match_intro': lambda: 0,
             'lobby': self.start_game,
             'unknown': self.recover_unknown,
             'star_drop_regular': lambda: self.click_star_drop("regular"),
@@ -989,6 +992,22 @@ class StageManager:
         self.window_controller.release_all_inputs()
         self.window_controller.gameplay_frame_time = None
         self.window_controller.click(w*.5, h*.5, already_include_ratio=True)
+
+    def reject_team_invite(self):
+        if self._should_stop() or self._should_pause():
+            return
+        now = time.monotonic()
+        if now - getattr(self, '_last_team_invite_reject', -100) < 1.5:
+            return
+        from team_invite import team_invite_reject_position
+        position = team_invite_reject_position(self.window_controller.screenshot())
+        fresh = getattr(self.window_controller, 'frame_is_fresh', lambda: True)
+        if position is None or not fresh() or self._should_stop() or self._should_pause():
+            return
+        self.window_controller.release_all_inputs()
+        self.window_controller.gameplay_frame_time = None
+        self.window_controller.click(*position, already_include_ratio=True)
+        self._last_team_invite_reject = now
 
     def dismiss_rating_dialog(self):
         if self._should_stop() or self._should_pause():

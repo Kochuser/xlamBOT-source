@@ -1,0 +1,52 @@
+import unittest
+from unittest.mock import patch
+import cv2
+import numpy as np
+from transition_glyphs import LOGO, PERCENT, VERSUS, INTRO_CAPTION
+from transition_screen import _glyph, transition_state
+from state_finder import get_state
+
+
+def screen(kind):
+    f=np.full((720,1280,3),(15,30,70),np.uint8)
+    items=[(LOGO,23,28),(PERCENT,644,573)] if kind=='loading' else [(VERSUS,590,277),(INTRO_CAPTION,369,648)]
+    if kind=='loading':
+        f[649:680,481:800]=(240,116,25)
+    for encoded,x,y in items:
+        g=_glyph(encoded,720);f[y:y+g.shape[0],x:x+g.shape[1]][g>0]=255
+    return f
+
+
+class TransitionScreenTests(unittest.TestCase):
+    def test_loading_and_intro_at_supported_sizes(self):
+        for kind in ['loading','match_intro']:
+            for w,h in [(960,540),(1280,720),(1920,1080)]:
+                f=cv2.resize(screen(kind),(w,h))
+                self.assertEqual(transition_state(f),kind,(kind,w,h))
+
+    def test_loading_requires_logo_percentage_and_bar(self):
+        for bounds in [(0,180,0,300),(560,640,620,710),(640,690,460,830)]:
+            f=screen('loading');y1,y2,x1,x2=bounds;f[y1:y2,x1:x2]=0
+            self.assertIsNone(transition_state(f))
+
+    def test_intro_requires_both_captions(self):
+        for bounds in [(270,345,580,690),(640,705,350,900)]:
+            f=screen('match_intro');y1,y2,x1,x2=bounds;f[y1:y2,x1:x2]=0
+            self.assertIsNone(transition_state(f))
+        for kind in ['loading','match_intro']:
+            self.assertIsNone(transition_state((screen(kind)*.5).astype(np.uint8)))
+
+    def test_full_native_classifier_skips_unrelated_menu_scans(self):
+        for kind in ['loading','match_intro']:
+            with patch('onboarding.onboarding_screen',side_effect=AssertionError('Unnecessary scan')):
+                self.assertEqual(get_state(screen(kind)),kind)
+
+    def test_known_modal_priority_is_preserved(self):
+        with patch('disconnect_dialog.idle_disconnect_reload_position',return_value=(1,2)):
+            self.assertEqual(get_state(screen('loading')),'idle_disconnect')
+        with patch('rating_dialog.rating_later_position',return_value=(1,2)):
+            self.assertEqual(get_state(screen('match_intro')),'rating_dialog')
+
+    def test_invalid_and_ordinary_blue_frames_have_no_transition_authority(self):
+        for frame in [None,np.zeros((720,1280),np.uint8),np.full((720,1280,3),(15,70,230),np.uint8)]:
+            self.assertIsNone(transition_state(frame))

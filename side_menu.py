@@ -22,10 +22,18 @@ def side_menu_close_position(frame):
     if h<200 or w<h*1.1:
         return None
     gray=cv2.cvtColor(frame,cv2.COLOR_RGB2GRAY)
+    templates=_templates(h)
+    # The close glyph is mandatory, so check its small region first.
+    glyph=templates[3];roi=gray[:int(h*.085),int(w*.80):]
+    if roi.shape[0]<glyph.shape[0] or roi.shape[1]<glyph.shape[1]:
+        return None
+    _,score,_,(close_x,close_y)=cv2.minMaxLoc(cv2.matchTemplate(roi,glyph,cv2.TM_CCOEFF_NORMED))
+    if score<.88:
+        return None
+    close=(int(w*.80)+close_x+glyph.shape[1]/2,close_y+glyph.shape[0]/2)
     x0=int(w*.55)
     roi=gray[:int(h*.7),x0:]
     hits=[]
-    templates=_templates(h)
     for glyph in templates[:3]:
         if roi.shape[0]<glyph.shape[0] or roi.shape[1]<glyph.shape[1]:
             return None
@@ -34,10 +42,4 @@ def side_menu_close_position(frame):
             hits.append((x+x0,y))
     if len(hits)<2 or max(x for x,y in hits)-min(x for x,y in hits)>w*.09:
         return None
-    glyph=templates[3];roi=gray[:int(h*.085),int(w*.80):]
-    if roi.shape[0]<glyph.shape[0] or roi.shape[1]<glyph.shape[1]:
-        return None
-    _,score,_,(x,y)=cv2.minMaxLoc(cv2.matchTemplate(roi,glyph,cv2.TM_CCOEFF_NORMED))
-    if score<.88:
-        return None
-    return (int(w*.80)+x+glyph.shape[1]/2,y+glyph.shape[0]/2)
+    return close

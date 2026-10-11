@@ -143,6 +143,13 @@ def get_in_game_state(image):
         from rating_dialog import rating_later_position
         if rating_later_position(image) is not None:
             return 'rating_dialog'
+        from team_invite import team_invite_reject_position
+        if team_invite_reject_position(image) is not None:
+            return 'team_invite'
+        from transition_screen import transition_state
+        transition = transition_state(image)
+        if transition is not None:
+            return transition
         # A bright current caption confirms gameplay without result/reward scans.
         # Dimmed modal HUDs and cached battle state cannot authorize this path.
         from showdown_hud import visible_showdown_caption
@@ -205,6 +212,10 @@ def get_in_game_state(image):
         from screen_evidence import current_lobby
         if current_lobby(image):
             return 'lobby'
+        # Four independent detail controls already distinguish this menu.
+        # Keep modal/onboarding priority, but avoid legacy result/shop scans.
+        from brawler_detail import detail_home_position
+        if detail_home_position(image) is not None: return "brawler_detail"
         if should_print_debug_info: print("Checking for match result...")
         game_result = is_in_end_of_a_match(image)
         if game_result: return f"end_{game_result}"
@@ -215,8 +226,6 @@ def get_in_game_state(image):
         if is_in_match_making(image): return "match_making"
         if should_print_debug_info: print("Checking for brawler selection...")
         if is_in_brawler_selection(image): return "brawler_selection"
-        from brawler_detail import detail_home_position
-        if detail_home_position(image) is not None: return "brawler_detail"
         if should_print_debug_info: print("Checking for shop")
         if is_in_shop(image): return "shop"
         if should_print_debug_info: print("Checking for offer popup...")
@@ -301,6 +310,13 @@ def connection_lost_retry_position(image):
     # This bound belongs to the modal, independent of per-device HUD calibration.
     left, top = round(width*.22), round(height*.30)
     crop = image[top:round(height*.64), left:round(width*.78)]
+    # This action colour is already required below. Reject absent controls
+    # before the three large caption correlations on ordinary game frames.
+    button = image[round(height*.57):round(height*.66),round(width*.25):round(width*.40)]
+    rgb = button.astype(np.int16)
+    action = (rgb[:,:,1]>110)&(rgb[:,:,2]>110)&(rgb[:,:,0]<170)&(rgb[:,:,1]-rgb[:,:,0]>20)
+    if np.count_nonzero(action)<max(8,round(width*height*.00008)):
+        return None
     for name in ('connection_lost_dialog.png', 'idle_disconnect_ru.png', 'login_failure_ru.png'):
         template = load_template(states_path+name, width, height)
         if template is None or crop.size == 0 or any(crop.shape[i]<template.shape[i] for i in (0,1)):
@@ -313,11 +329,6 @@ def connection_lost_retry_position(image):
         body = image[y:min(height,y+round(height*.25)),x:min(width,x+round(width*.42))]
         grey = (np.ptp(body.astype(np.int16),axis=2)<10) & (body.mean(axis=2)>32) & (body.mean(axis=2)<95)
         if body.size == 0 or grey.mean()<.62:
-            continue
-        button = image[round(height*.57):round(height*.66),round(width*.25):round(width*.40)]
-        rgb=button.astype(np.int16)
-        action=(rgb[:,:,1]>110)&(rgb[:,:,2]>110)&(rgb[:,:,0]<170)&(rgb[:,:,1]-rgb[:,:,0]>20)
-        if np.count_nonzero(action)<max(8,round(width*height*.00008)):
             continue
         # The legacy rectangle stores x1,y1,x2,y2, not x,y,width,height.
         return round(width*618.5/1920),round(height*654.5/1080)
