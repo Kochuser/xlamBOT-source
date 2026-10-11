@@ -522,6 +522,25 @@ class TrophyObserver:
             self.send_results_to_api()
         self.save_history()
 
+    def record_unattributed_result(self, parsed_result: ParsedGameResult, playstyle_info):
+        """Save the observed outcome without inventing brawler measurements."""
+        info = playstyle_info if isinstance(playstyle_info, dict) else {}
+        self.match_history.append({
+            "date_time": datetime.now().isoformat(),
+            "account_tag": load_toml_as_dict("cfg/general_config.toml").get("player_tag", ""),
+            "trophy_source": "unknown", "brawler_name": "",
+            "result": parsed_result.result.value,
+            "current_trophies": None, "trophy_delta": None, "new_winstreak": None,
+            "playstyle_hash": hash_playstyle(info), "playstyle_name": info.get("name", ""),
+            "playstyle_gamemodes": "|".join(info.get("gamemodes") or []),
+            "playstyle_brawlers": "|".join(info.get("brawlers") or []),
+            "xlambot_version": XLAMBOT_VERSION, "power_level": -1,
+        })
+        self.match_counter += 1
+        if self.match_counter % 3 == 0:
+            self.send_results_to_api()
+        self.save_history()
+
     def add_win(self, parsed_result: ParsedGameResult):
         if parsed_result.result == MatchResult.VICTORY:
             if not isinstance(self.current_wins, int):
