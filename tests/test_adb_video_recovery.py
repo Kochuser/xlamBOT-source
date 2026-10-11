@@ -160,6 +160,54 @@ class VideoRecoveryTests(unittest.TestCase):
         bot.window_controller.reconnect_scrcpy.assert_not_called()
         bot.window_controller.launch_brawl_stars.assert_not_called()
 
+    def test_failed_android_probe_preserves_independently_healthy_video(self):
+        for failure in (AdbError('timeout'), ConnectionError('closed'), OSError('read')):
+            bot = self.bot(); bot.Play = Mock(); bot.set_latest_state = Mock()
+            bot.time_since_checked_if_brawl_stars_crashed = 0
+            bot.check_if_brawl_stars_crashed_timer = 30
+            bot.window_controller.brawl_stars_process_alive.side_effect = failure
+            bot.window_controller.get_latest_frame.return_value = (object(), 99.9)
+            bot.window_controller.frame_is_fresh.return_value = True
+            bot.window_controller.is_stream_alive.return_value = True
+            bot._transport_lost_since = 10
+            with patch.object(time, 'time', return_value=100):
+                self.assertTrue(bot.check_and_handle_brawl_stars_crash())
+            bot.window_controller.reconnect_scrcpy.assert_not_called()
+            bot.window_controller.launch_brawl_stars.assert_not_called()
+            bot.Play.clear_gas_state.assert_not_called()
+            self.assertIsNone(bot._transport_lost_since)
+
+    def test_failed_android_probe_cannot_bypass_video_retry_interval(self):
+        bot = self.bot(); bot.Play = Mock(); bot.set_latest_state = Mock()
+        bot.check_if_brawl_stars_crashed_timer = 30
+        bot.window_controller.brawl_stars_process_alive.side_effect = AdbError('timeout')
+        bot.window_controller.get_latest_frame.return_value = (None, 0)
+        bot.window_controller.frame_is_fresh.return_value = False
+        bot.window_controller.reconnect_scrcpy.return_value = False
+        for now in (100, 101):
+            bot.time_since_checked_if_brawl_stars_crashed = 0
+            with patch.object(time, 'time', return_value=now):
+                self.assertFalse(bot.check_and_handle_brawl_stars_crash())
+                bot.recover_video_stream(0, now=now)
+        bot.window_controller.reconnect_scrcpy.assert_called_once_with(max_retries=1)
+        self.assertEqual(bot._transport_lost_since, 100)
+
+    def test_failed_probe_with_stale_or_disconnected_video_releases_inputs(self):
+        for frame, fresh, alive in ((None, True, True), (object(), False, True),
+                                    (object(), True, False)):
+            bot = self.bot(); bot.Play = Mock(); bot.set_latest_state = Mock()
+            bot.time_since_checked_if_brawl_stars_crashed = 0
+            bot.check_if_brawl_stars_crashed_timer = 30
+            bot.window_controller.brawl_stars_process_alive.side_effect = AdbError('timeout')
+            bot.window_controller.get_latest_frame.return_value = (frame, 99.9)
+            bot.window_controller.frame_is_fresh.return_value = fresh
+            bot.window_controller.is_stream_alive.return_value = alive
+            with patch.object(time, 'time', return_value=100):
+                self.assertFalse(bot.check_and_handle_brawl_stars_crash())
+            bot.window_controller.release_all_inputs.assert_called()
+            bot.Play.clear_gas_state.assert_called_once()
+            bot.window_controller.reconnect_scrcpy.assert_not_called()
+
     def test_missing_stale_or_dead_stream_cannot_clear_device_recovery(self):
         for frame,fresh,alive in [(None,True,True),(object(),False,True),(object(),True,False)]:
             bot=self.bot();bot._device_recovering=True;bot._transport_lost_since=10
@@ -186,6 +234,7 @@ class VideoRecoveryTests(unittest.TestCase):
     def bot(self):
         bot = BotInstance.__new__(BotInstance)
         bot.window_controller = Mock()
+        bot.window_controller.get_latest_frame.return_value = (None, 0)
         bot.device_label = 'test-device'
         bot.should_stop = Mock(return_value=False)
         return bot

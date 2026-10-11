@@ -489,19 +489,26 @@ class BotInstance:
                     self.time_since_checked_if_brawl_stars_crashed = time.time()
                 else:
                     self.time_since_checked_if_brawl_stars_crashed = time.time()
-                if getattr(self,'_device_recovering',False):
-                    self._device_recovering=not self.window_controller.reconnect_scrcpy(max_retries=1)
             except (AdbError, ConnectionError, OSError):
-                self._device_recovering=True
-                self.window_controller.release_all_inputs()
-                self.Play.world_state={}
-                self.Play.clear_gas_state()
-                self.set_latest_state('unknown')
-                print(f"[{self.device_label}] ADB error while checking Brawl Stars - attempting to reconnect scrcpy...")
-                if self.window_controller.reconnect_scrcpy(max_retries=1):
-                    self._device_recovering=False
+                # A shell probe and an existing video socket can fail separately.
+                # Destroying fresh capture here turns a transient shell timeout
+                # into a video outage if the guest cannot start another server.
+                frame, stamp = self.window_controller.get_latest_frame()
+                live_video = (frame is not None
+                              and self.window_controller.frame_is_fresh(stamp)
+                              and self.window_controller.is_stream_alive())
+                self._device_recovering = not live_video
+                if live_video:
+                    self.check_transport_recovery(True)
+                    print(f"[{self.device_label}] Android status query failed; fresh video retained.")
                 else:
-                    print(f"[{self.device_label}] Device unavailable; inputs released, waiting for transport recovery.")
+                    self.window_controller.release_all_inputs()
+                    self.Play.world_state = {}
+                    self.Play.clear_gas_state()
+                    self.set_latest_state('unknown')
+                    # Only recover_video_stream owns capture retries and their
+                    # interval. Status probes must not create a second loop.
+                    print(f"[{self.device_label}] Android status query failed; inputs released, waiting for video recovery.")
 
             finally:
                 self.time_since_checked_if_brawl_stars_crashed = time.time()
