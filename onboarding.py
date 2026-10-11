@@ -100,10 +100,12 @@ def instruction_confirm(frame):
 
 def first_reward_guide(frame):
     if frame is None:return None
-    claim=localized(frame,GUIDE_CLAIM,(.20,.4,.8,.74),.94) or localized(frame,CLAIM_SMALL,(.20,.4,.8,.74),.94)
-    if claim and localized(frame,ROAD_HEADER,(.07,0,.35,.10),.94) is not None:
-        h,w=frame.shape[:2];r,g,b=cv2.split(frame[round(.23*h):round(.45*h),round(.40*w):round(.65*w)])
-        if ((r>210)&(g>130)&(g<230)&(b<185)).mean()>.12:return claim
+    # The claim control belongs to the reward road, not ordinary lobby scenery.
+    if localized(frame,ROAD_HEADER,(.07,0,.35,.10),.94) is not None:
+        claim=localized(frame,GUIDE_CLAIM,(.20,.4,.8,.74),.94) or localized(frame,CLAIM_SMALL,(.20,.4,.8,.74),.94)
+        if claim:
+            h,w=frame.shape[:2];r,g,b=cv2.split(frame[round(.23*h):round(.45*h),round(.40*w):round(.65*w)])
+            if ((r>210)&(g>130)&(g<230)&(b<185)).mean()>.12:return claim
     if frame is None or localized(frame,REWARD_HINT,(.08,.26,.38,.44),.94) is None:return None
     h,w=frame.shape[:2];crop=frame[round(.08*h):round(.26*h),round(.16*w):round(.28*w)]
     r,g,b=cv2.split(crop)
