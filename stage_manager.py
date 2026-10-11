@@ -796,6 +796,7 @@ class StageManager:
                     entry['win_streak'] = self.Trophy_observer.win_streak
                     save_brawler_data(self.brawlers_pick_data)
                 else:
+                    self.Trophy_observer.record_unattributed_result(parsed_result, self.playstyle_info)
                     print('Brawler identity is unconfirmed; per-brawler statistics were not changed.')
 
             if not button_pressed and self.play_again_on_win and parsed_result and parsed_result.result == MatchResult.VICTORY and not self._should_pause() and not self._should_stop():
