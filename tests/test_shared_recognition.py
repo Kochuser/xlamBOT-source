@@ -50,13 +50,17 @@ class SharedRecognitionTests(unittest.TestCase):
         node=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=='start_game')
         self.assertLess(ast.unparse(node).index('unsupported_lobby_mode(frame)'),ast.unparse(node).index('state is lobby'))
     def test_offline_adb_response_triggers_rediscovery(self):
-        tree=ast.parse((ROOT/'window_controller.py').read_text())
-        node=next(n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=='reconnect_scrcpy')
-        clock=SimpleNamespace(time=lambda:100.,sleep=lambda n:None)
-        ns={'time':clock,'scrcpy':SimpleNamespace(EVENT_FRAME='frame')}
-        exec(compile(ast.Module(body=[node],type_ignores=[]),'reconnect','exec'),ns)
-        obj=SimpleNamespace(scrcpy_client=Mock(),device=SimpleNamespace(get_state=lambda:'offline'),frame_lock=threading.Lock(),force_rediscover=Mock(return_value=True),_create_scrcpy_client=Mock(return_value=Mock()),get_latest_frame=lambda:(np.zeros((2,2,3)),100))
-        self.assertTrue(ns['reconnect_scrcpy'](obj,max_retries=1))
+        from test_runtime_consistency import WindowController, scrcpy
+        from unittest.mock import patch
+        obj=WindowController.__new__(WindowController)
+        obj.scrcpy_client=Mock()
+        obj.device=SimpleNamespace(get_state=lambda:'offline')
+        obj.frame_lock=threading.Lock()
+        obj.force_rediscover=Mock(return_value=True)
+        obj._create_scrcpy_client=Mock(return_value=Mock())
+        obj.get_latest_frame=lambda:(np.zeros((2,2,3)),100)
+        with patch.object(__import__('time'),'time',return_value=100), patch.object(__import__('time'),'sleep'), patch.object(scrcpy,'EVENT_FRAME','frame',create=True):
+            self.assertTrue(obj.reconnect_scrcpy(max_retries=1))
         obj.force_rediscover.assert_called_once()
     def test_play_uses_verified_button_instead_of_fixed_menu_coordinates(self):
         tree=ast.parse((ROOT/'stage_manager.py').read_text())
