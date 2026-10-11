@@ -7,6 +7,7 @@
   'Нет связи с локальной панелью. Проверьте, что бот запущен, и обновите страницу.':'Cannot reach the local panel. Make sure the bot is running and refresh the page.',
   'Старый модуль обновлений. Установите текущую версию поверх существующей.':'Legacy updater. Install the current version over your existing installation.',
   'перезагрузка связи':'reloading connection',
+  'загрузка игры':'loading game', 'начало матча':'match starting', 'приглашение в команду':'team invitation',
   'Активно ищет бой и давит ближайших противников.':'Actively seeks fights and pressures nearby opponents.',
   'Держится с командой, избегает газа и играет на выживание.':'Stays with the team, avoids gas, and plays for survival.'
  });

@@ -213,7 +213,7 @@
     // raw string is fine, but "brawler_selection" tells an operator nothing.
     const GAME_STATE_LABELS = {
         lobby: 'лобби', match: 'матч', match_making: 'поиск матча', onboarding: 'обучение игры', mode_selection: 'выбор трио',
-        frame_stale: 'ожидание кадра', side_menu: 'меню',
+        frame_stale: 'ожидание кадра', side_menu: 'меню', loading: 'загрузка игры', match_intro: 'начало матча', team_invite: 'приглашение в команду',
         brawler_detail: 'карточка бойца', brawler_selection: 'выбор бойца', brawler_choice: 'выбор награды', shop: 'магазин', popup: 'окно',
         connection_lost: 'нет связи', idle_disconnect: 'перезагрузка связи', prestige_milestone: 'престиж',
         trophy_reward: 'награда', reward_received: 'награда', star_drop_regular: 'звёздное дропание',

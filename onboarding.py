@@ -46,12 +46,13 @@ def tutorial_screen(frame):
     return frame is not None and locate(frame,SID,(0,.055,.26,.17),.93) is not None
 
 def cookie_decline(frame):
-    if frame is None or localized(frame,COOKIES,(.35,.85,.67,.92),.94) is None:return None
+    if frame is None:return None
     h,w=frame.shape[:2]
     left=frame[round(.75*h):round(.84*h),round(.05*w):round(.47*w)].mean(axis=(0,1))
     right=frame[round(.75*h):round(.84*h),round(.53*w):round(.94*w)].mean(axis=(0,1))
     if left.max()<110 and right[0]>200 and right[1]>120 and right[2]<130:
-        return w*.26,h*.795
+        if localized(frame,COOKIES,(.35,.85,.67,.92),.94) is not None:
+            return w*.26,h*.795
     return None
 
 def onboarding_screen(frame):
@@ -60,11 +61,12 @@ def onboarding_screen(frame):
 def guided_play(frame):
     hint=ENGLISH_ASSETS.get('GUIDE_PLAY_HINT');button=ENGLISH_ASSETS.get('GUIDE_PLAY')
     if frame is None or hint is None or button is None:return None
+    h,w=frame.shape[:2];r,g,b=cv2.split(frame[round(.68*h):round(.86*h),round(.75*w):round(.86*w)])
+    if ((r>210)&(g>130)&(g<230)&(b<185)).mean()<=.12:return None
     if locate(frame,hint,(.66,.50,.93,.75),.94) is None:return None
     point=locate(frame,button,(.73,.82,.99,.99),.94)
     if point is None:return None
-    h,w=frame.shape[:2];r,g,b=cv2.split(frame[round(.68*h):round(.86*h),round(.75*w):round(.86*w)])
-    return point if ((r>210)&(g>130)&(g<230)&(b<185)).mean()>.12 else None
+    return point
 
 def guided_upgrade(frame):
     if frame is None:return None
@@ -116,8 +118,10 @@ def first_reward_guide(frame):
     return w*.218,h*.112
 
 def first_result_exit(frame):
-    if frame is None or localized(frame,FIRST_WIN,(0,0,.50,.20),.94) is None:return None
-    return localized(frame,FIRST_EXIT,(.77,.86,.99,.99),.94)
+    if frame is None:return None
+    exit_position=localized(frame,FIRST_EXIT,(.77,.86,.99,.99),.94)
+    if exit_position is None or localized(frame,FIRST_WIN,(0,0,.50,.20),.94) is None:return None
+    return exit_position
 
 def generated_name_confirm(frame):
     if not tutorial_screen(frame) or localized(frame,NICK_TITLE,(.28,.09,.72,.18),.94) is None:return None
