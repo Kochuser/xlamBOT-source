@@ -29,6 +29,23 @@ class TransitionScreenTests(unittest.TestCase):
             f=screen('loading');y1,y2,x1,x2=bounds;f[y1:y2,x1:x2]=0
             self.assertIsNone(transition_state(f))
 
+    def test_percentage_remains_independent_of_neighbouring_digit(self):
+        # A native crop can accidentally include the edge of the last digit.
+        # Remove such a clipped component when constructing an independent
+        # percentage screen, then vary the neighbouring digit's appearance.
+        glyph=_glyph(PERCENT,720)
+        _,labels,stats,_=cv2.connectedComponentsWithStats(glyph)
+        percent=glyph.copy()
+        for label,(x,y,w,h,area) in enumerate(stats[1:],1):
+            if x==0:
+                percent[labels==label]=0
+        for neighbour in [0,255]:
+            f=screen('loading')
+            f[573:624,644:644+glyph.shape[1]]=(15,30,70)
+            f[573:624,638:644]=neighbour
+            f[573:624,644:644+glyph.shape[1]][percent>0]=255
+            self.assertEqual(transition_state(f),'loading')
+
     def test_intro_requires_both_captions(self):
         for bounds in [(270,345,580,690),(640,705,350,900)]:
             f=screen('match_intro');y1,y2,x1,x2=bounds;f[y1:y2,x1:x2]=0
