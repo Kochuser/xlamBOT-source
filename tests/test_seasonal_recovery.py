@@ -20,6 +20,23 @@ def announcement():
  return f
 
 class SeasonalRecoveryTests(unittest.TestCase):
+ def test_legendary_gold_star_keeps_heading_and_geometry_requirements(self):
+  f=reward();body=f[120:]
+  background=np.all(body==[40,130,85],axis=2)
+  outline=np.all(body==[0,20,15],axis=2)
+  face=np.all(body==[20,130,75],axis=2)
+  body[background]=[255,220,0];body[outline]=[160,70,10];body[face]=[230,150,0]
+  for w,h in [(960,540),(1280,720),(1920,1080)]:
+   self.assertTrue(modern_daily_reward(cv2.resize(f,(w,h))))
+  self.assertEqual(state_finder.get_in_game_state(f),'daily_reward')
+  without_title=f.copy();without_title[:100]=[255,220,0]
+  self.assertFalse(modern_daily_reward(without_title))
+  without_star=f.copy();without_star[120:]=[255,220,0]
+  self.assertFalse(modern_daily_reward(without_star))
+  rectangle=without_star.copy();rectangle[180:628,448:836]=[160,70,10]
+  self.assertFalse(modern_daily_reward(rectangle))
+  self.assertFalse(modern_daily_reward((f*.5).astype(np.uint8)))
+
  def test_positive_scales_and_animated_reward_star(self):
   for w,h in [(960,540),(1280,720),(1920,1080)]:
    self.assertTrue(modern_daily_reward(cv2.resize(reward(),(w,h))))
