@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 import cv2
 import numpy as np
-from transition_glyphs import LOGO, PERCENT, VERSUS, INTRO_CAPTION
+from transition_glyphs import LOGO, PERCENT, VERSUS, INTRO_CAPTION, BAR_CAP
 from transition_screen import _glyph, transition_state
 from state_finder import get_state
 
@@ -24,9 +24,24 @@ class TransitionScreenTests(unittest.TestCase):
                 f=cv2.resize(screen(kind),(w,h))
                 self.assertEqual(transition_state(f),kind,(kind,w,h))
 
-    def test_loading_requires_logo_percentage_and_bar(self):
+    def test_percentage_path_requires_logo_percentage_and_bar(self):
         for bounds in [(0,180,0,300),(560,640,620,710),(640,690,460,830)]:
             f=screen('loading');y1,y2,x1,x2=bounds;f[y1:y2,x1:x2]=0
+            self.assertIsNone(transition_state(f))
+
+    def outline_screen(self):
+        f=screen('loading');f[560:640,620:710]=(15,30,70)
+        glyph=_glyph(BAR_CAP,720)
+        h,w=glyph.shape
+        f[640:640+h,472:472+w]=(240,116,25)
+        f[640:640+h,472:472+w][glyph>0]=0
+        return f
+
+    def test_faded_percentage_requires_independent_logo_bar_and_outline(self):
+        for w,h in [(960,540),(1280,720),(1920,1080)]:
+            self.assertEqual(transition_state(cv2.resize(self.outline_screen(),(w,h))),'loading')
+        for bounds in [(0,180,0,300),(640,692,472,540),(640,692,472,800)]:
+            f=self.outline_screen();y1,y2,x1,x2=bounds;f[y1:y2,x1:x2]=(80,100,170)
             self.assertIsNone(transition_state(f))
 
     def test_percentage_remains_independent_of_neighbouring_digit(self):
