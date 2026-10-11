@@ -140,6 +140,9 @@ def get_in_game_state(image):
             return "idle_disconnect"
         # Disconnect dialogs win even when the underlying battle HUD remains.
         if is_in_connection_lost(image): return "connection_lost"
+        from rating_dialog import rating_later_position
+        if rating_later_position(image) is not None:
+            return 'rating_dialog'
         # A bright current caption confirms gameplay without result/reward scans.
         # Dimmed modal HUDs and cached battle state cannot authorize this path.
         from showdown_hud import visible_showdown_caption
