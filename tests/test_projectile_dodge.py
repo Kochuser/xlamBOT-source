@@ -136,6 +136,37 @@ class ProjectileDodgeTests(unittest.TestCase):
         self.assertEqual(dodge.tracks[0]["hits"], 1)
         self.assertFalse(dodge.threats)
 
+    def test_60_fps_accumulates_motion_without_renewing_cached_timestamps(self):
+        dodge = ProjectileDodge()
+        for i in range(5):
+            dodge.observe(
+                self.frame((760 - round(200 * i / 60), 380)),
+                10 + i / 60,
+                self.player,
+                [],
+            )
+        self.assertEqual(len(dodge.threats), 1)
+        original = dodge.stamp
+        dodge.observe(self.frame((743, 380)), 10 + 5 / 60, self.player, [])
+        self.assertEqual(dodge.stamp, original)
+        self.assertEqual(dodge.snapshot()["observed_at"], original)
+        self.assertEqual(len(dodge.threats), 1)
+        self.assertEqual(
+            dodge.choose(
+                (100, 0), self.player, 15, 130, original + 0.2, lambda v: True
+            ),
+            (100, 0),
+        )
+
+    def test_no_candidates_skip_camera_work_and_discard_previous_shots(self):
+        dodge = self.approaching()
+        with patch("projectile_dodge.cv2.phaseCorrelate") as camera:
+            dodge.observe(self.frame(None), 10.24, self.player, [])
+        camera.assert_not_called()
+        self.assertFalse(dodge.threats)
+        self.assertFalse(dodge.tracks)
+        self.assertIsNone(dodge.gray)
+
     def play(self):
         play = Play.__new__(Play)
         play.projectile_dodge = self.approaching()
