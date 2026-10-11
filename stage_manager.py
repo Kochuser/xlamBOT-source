@@ -936,7 +936,8 @@ class StageManager:
             return
         from seasonal_rewards import seasonal_announcement_dismiss_position
         position = seasonal_announcement_dismiss_position(self.window_controller.screenshot())
-        if position is None or self._should_stop() or self._should_pause():
+        fresh = getattr(self.window_controller, 'frame_is_fresh', lambda: True)
+        if position is None or not fresh() or self._should_stop() or self._should_pause():
             return
         self._seasonal_last_tap = now
         self.window_controller.release_all_inputs()
