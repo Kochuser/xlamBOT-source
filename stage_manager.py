@@ -970,7 +970,8 @@ class StageManager:
             return
         from new_brawler_receipt import new_brawler_continue_position
         position = new_brawler_continue_position(self.window_controller.screenshot())
-        if position is None or self._should_stop() or self._should_pause():
+        fresh = getattr(self.window_controller, 'frame_is_fresh', lambda: True)
+        if position is None or not fresh() or self._should_stop() or self._should_pause():
             return
         self.window_controller.release_all_inputs()
         self.window_controller.gameplay_frame_time = None
