@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 import cv2
 import numpy as np
 from reward_receipts import _glyph
-from brawler_blast_glyphs import TAP, ARROW, BONUS, LEFT_GUN, RIGHT_GUN, DOME, DOME_GLOW
+from brawler_blast_glyphs import TAP, ARROW, BONUS, LEFT_GUN, RIGHT_GUN, DOME, DOME_GLOW, DOME_PULSE
 from brawler_blast import brawler_blast_fire_position
 from stage_manager import StageManager
 from state_finder import get_state
@@ -27,6 +27,24 @@ def gallery(w=1280, h=720):
 
 
 class BrawlerBlastTests(unittest.TestCase):
+    def test_capsule_pulse_preserves_scene_requirements_and_modal_priority(self):
+        f=gallery();f[270:400]=0;f[650:]=0
+        for encoded,x,y in ((LEFT_GUN,40,385),(RIGHT_GUN,1049,385),(DOME_PULSE,507,550)):
+            g=_glyph(encoded,720)
+            f[y:y+g.shape[0],x:x+g.shape[1]]=g[:,:,None]
+        f[411:429,165:183]=(255,244,40)
+        for w,h in ((960,540),(1280,720),(1920,1080)):
+            resized=cv2.resize(f,(w,h))
+            with patch('onboarding.onboarding_screen',side_effect=AssertionError('Unrelated scan')):
+                self.assertEqual(get_state(resized),'brawler_blast')
+            with patch('disconnect_dialog.idle_disconnect_reload_position',return_value=(200,300)):
+                self.assertEqual(get_state(resized),'idle_disconnect')
+        for y1,y2,x1,x2 in ((385,565,40,225),(385,565,1049,1238),(550,637,507,575),
+                           (411,429,165,183),(0,120,0,180)):
+            broken=f.copy();broken[y1:y2,x1:x2]=0
+            self.assertIsNone(brawler_blast_fire_position(broken))
+        self.assertIsNone(brawler_blast_fire_position((f*.5).astype(np.uint8)))
+
     def test_gallery_with_blinking_prompts_uses_independently_verified_control(self):
         f=gallery();f[270:400]=0;f[650:]=0
         for encoded,x,y in ((LEFT_GUN,40,385),(RIGHT_GUN,1049,385),(DOME,521,550)):

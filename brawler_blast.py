@@ -2,7 +2,7 @@
 import cv2
 import numpy as np
 from reward_receipts import _glyph, _valid
-from brawler_blast_glyphs import TAP, ARROW, BONUS, LEFT_GUN, RIGHT_GUN, DOME, DOME_GLOW
+from brawler_blast_glyphs import TAP, ARROW, BONUS, LEFT_GUN, RIGHT_GUN, DOME, DOME_GLOW, DOME_PULSE
 
 
 def _find(frame, encoded, bounds, pink=False):
@@ -61,7 +61,7 @@ def _gallery_control(frame):
     gray=cv2.cvtColor(frame,cv2.COLOR_RGB2GRAY)
     left=None
     for variants,bounds in (((LEFT_GUN,),(0,.5,.21,.80)),((RIGHT_GUN,),(.79,.5,1,.80)),
-                            ((DOME,DOME_GLOW),(.39,.71,.46,.91))):
+                            ((DOME,DOME_GLOW,DOME_PULSE),(.39,.71,.46,.91))):
         x1,y1,x2,y2=bounds;x,y=round(w*x1),round(h*y1)
         roi=gray[y:round(h*y2),x:round(w*x2)]
         matched=None

@@ -163,6 +163,11 @@ def get_in_game_state(image):
             result = find_game_result(image)
             if result:
                 return f'end_{result}'
+        # Both guns, the capsule and the live yellow cap independently identify
+        # this gallery. Avoid unrelated first-run scans while it is visible.
+        from brawler_blast import brawler_blast_fire_position
+        if brawler_blast_fire_position(image) is not None:
+            return 'brawler_blast'
         from onboarding import onboarding_screen
         from showdown_mode import event_screen
         from showdown_mode import trio_win_next
@@ -179,9 +184,6 @@ def get_in_game_state(image):
         if club_suggestion_close_position(image) is not None:
             return "club_suggestion"
         from seasonal_rewards import seasonal_announcement_dismiss_position
-        from brawler_blast import brawler_blast_fire_position
-        if brawler_blast_fire_position(image) is not None:
-            return 'brawler_blast'
         if seasonal_announcement_dismiss_position(image) is not None:
             return "seasonal_announcement"
         from screen_evidence import daily_reward
@@ -216,6 +218,9 @@ def get_in_game_state(image):
         # Keep modal/onboarding priority, but avoid legacy result/shop scans.
         from brawler_detail import detail_home_position
         if detail_home_position(image) is not None: return "brawler_detail"
+        # The same two grid controls retain all modal/onboarding priority.
+        # Legacy result scans cannot add evidence to an already confirmed grid.
+        if is_in_brawler_selection(image): return "brawler_selection"
         if should_print_debug_info: print("Checking for match result...")
         game_result = is_in_end_of_a_match(image)
         if game_result: return f"end_{game_result}"
@@ -224,8 +229,6 @@ def get_in_game_state(image):
         if is_in_lobby(image): return "lobby"
         if should_print_debug_info: print("Checking for match making...")
         if is_in_match_making(image): return "match_making"
-        if should_print_debug_info: print("Checking for brawler selection...")
-        if is_in_brawler_selection(image): return "brawler_selection"
         if should_print_debug_info: print("Checking for shop")
         if is_in_shop(image): return "shop"
         if should_print_debug_info: print("Checking for offer popup...")
