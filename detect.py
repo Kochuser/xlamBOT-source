@@ -8,6 +8,7 @@ import numpy as np
 import onnxruntime as ort
 from utils import load_toml_as_dict
 import warnings
+import model_sessions
 
 # GPU drivers share process-wide resources. Serializing creation and inference
 # also avoids a second device creating a DirectML session during another run.
@@ -214,8 +215,16 @@ class Detect:
             so.enable_mem_pattern = False
             so.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
         try:
-            with _GPU_RUNTIME_LOCK if len(providers) > 1 else nullcontext():
-                model = ort.InferenceSession(self.model_path, sess_options=so, providers=providers)
+            def create_session():
+                with _GPU_RUNTIME_LOCK if len(providers) > 1 else nullcontext():
+                    session = ort.InferenceSession(self.model_path, sess_options=so, providers=providers)
+                    # Runtime fallback replaces a session's internal provider.
+                    # Keep the shared session immutable; the detector's existing
+                    # exception handler switches only that owner to CPU.
+                    session.disable_fallback()
+                    return session
+            model, shared = model_sessions.acquire(
+                self.model_path, providers, self.optimal_threads_amount, create_session)
         except Exception as error:
             if providers == ["CPUExecutionProvider"]:
                 raise
@@ -225,6 +234,8 @@ class Detect:
             return self.load_model(cpu_only=True)
 
         used_provider = model.get_providers()[0]
+        if shared:
+            print("Reusing model session; detector buffers remain device-local.")
         if used_provider == "CUDAExecutionProvider":
             print("Using CUDA GPU")
         elif used_provider == "DmlExecutionProvider":
