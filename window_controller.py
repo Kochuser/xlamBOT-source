@@ -217,6 +217,7 @@ class WindowController:
             print(f"Connected to device: {self.serial}")
 
             self.frame_lock = threading.Lock()
+            self._capture_generation = 0
             self.max_fps = max_fps
             self.capture_options = capture_options(load_toml_as_dict("cfg/general_config.toml"), max_fps)
             self.capture_max_fps = self.capture_options["max_fps"]
@@ -234,19 +235,7 @@ class WindowController:
             )
             self.debug_view = DebugViewPublisher.from_config()
 
-            def on_frame(frame):
-                if frame is not None:
-                    with self.frame_lock:
-                        self.last_frame = frame
-                        self.last_frame_time = time.time()
-                        self._capture_count += 1
-                        elapsed = time.monotonic() - self._capture_window
-                        if elapsed >= 1:
-                            self.capture_fps = self._capture_count / elapsed
-                            self._capture_count = 0
-                            self._capture_window = time.monotonic()
-
-            self.scrcpy_client.add_listener(scrcpy.EVENT_FRAME, on_frame)
+            self.scrcpy_client.add_listener(scrcpy.EVENT_FRAME, self._capture_listener(self.scrcpy_client))
             self.scrcpy_client.start(threaded=True)
             atexit.register(self.close)
             print("Scrcpy client started successfully.")
@@ -349,6 +338,38 @@ class WindowController:
                 return None, 0.0
             return self.last_frame, self.last_frame_time
 
+    def _invalidate_capture(self):
+        # Invalidate before stopping: the decoder may still deliver a final frame.
+        with self.frame_lock:
+            self._capture_generation = getattr(self, '_capture_generation', 0) + 1
+            self.last_frame = None
+            self.last_frame_time = 0.0
+            self.capture_fps = 0.0
+            self._capture_count = 0
+            self._capture_window = time.monotonic()
+            self._menu_frame_evidence = None
+            self.gameplay_frame_time = None
+
+    def _capture_listener(self, client):
+        generation = getattr(self, '_capture_generation', 0)
+        def on_frame(frame):
+            if frame is None:
+                return
+            with self.frame_lock:
+                if (getattr(self, '_closed', False)
+                        or client is not self.scrcpy_client
+                        or generation != getattr(self, '_capture_generation', 0)):
+                    return
+                self.last_frame = frame
+                self.last_frame_time = time.time()
+                self._capture_count += 1
+                elapsed = time.monotonic() - self._capture_window
+                if elapsed >= 1:
+                    self.capture_fps = self._capture_count / elapsed
+                    self._capture_count = 0
+                    self._capture_window = time.monotonic()
+        return on_frame
+
     def is_stream_alive(self) -> bool:
         """Whether the scrcpy stream itself is still connected.
 
@@ -367,6 +388,7 @@ class WindowController:
 
     def force_rediscover(self) -> bool:
         print("Reconnecting to the same ADB device.")
+        self._invalidate_capture()
         try:
             self.scrcpy_client.stop()
         except Exception:
@@ -388,16 +410,15 @@ class WindowController:
 
     def reconnect_scrcpy(self, max_retries=3):
         for attempt in range(1, max_retries + 1):
+            if getattr(self, '_closed', False):
+                return False
             print(f"Scrcpy reconnect attempt {attempt}/{max_retries}")
+            self._invalidate_capture()
             try:
                 self.scrcpy_client.stop()
             except Exception:
                 pass
             time.sleep(1)
-
-            with self.frame_lock:
-                self.last_frame = None
-                self.last_frame_time = 0.0
 
             self.are_we_moving = False
             self.last_joystick_pos = (None, None)
@@ -411,21 +432,9 @@ class WindowController:
                     time.sleep(2 * attempt)
                     continue
 
-            def on_frame(frame):
-                if frame is not None:
-                    with self.frame_lock:
-                        self.last_frame = frame
-                        self.last_frame_time = time.time()
-                        self._capture_count += 1
-                        elapsed = time.monotonic() - self._capture_window
-                        if elapsed >= 1:
-                            self.capture_fps = self._capture_count / elapsed
-                            self._capture_count = 0
-                            self._capture_window = time.monotonic()
-
             try:
                 self.scrcpy_client = self._create_scrcpy_client()
-                self.scrcpy_client.add_listener(scrcpy.EVENT_FRAME, on_frame)
+                self.scrcpy_client.add_listener(scrcpy.EVENT_FRAME, self._capture_listener(self.scrcpy_client))
                 self.scrcpy_client.start(threaded=True)
             except Exception as e:
                 print(f"Scrcpy client creation failed: {e}")
@@ -435,7 +444,7 @@ class WindowController:
             deadline = time.time() + 8
             while time.time() < deadline:
                 _, ft = self.get_latest_frame()
-                if ft > 0 and (time.time() - ft) < 2:
+                if ft > 0 and 0 <= time.time() - ft < 2 and self.is_stream_alive():
                     print(f"Scrcpy feed restored on attempt {attempt}")
                     return True
                 time.sleep(0.5)
@@ -707,6 +716,8 @@ class WindowController:
         if getattr(self, '_closed', False):
             return
         self._closed = True
+        if hasattr(self, 'frame_lock'):
+            self._invalidate_capture()
         atexit.unregister(self.close)
         self.input_enabled = False
         if hasattr(self, "_watchdog_stop"):
@@ -721,9 +732,10 @@ class WindowController:
             self._device_lease.close()
 
     def stop_scrcpy_with_timeout(self, timeout=2.0):
+        client = self.scrcpy_client
         def stop_client():
             try:
-                self.scrcpy_client.stop()
+                client.stop()
             except Exception as exc:
                 print(f"Scrcpy stop failed: {exc}")
 
