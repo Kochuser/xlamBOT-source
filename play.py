@@ -30,6 +30,7 @@ GAS_CORRIDOR_SAMPLES = 5
 GAS_FAR_FIELD_WEIGHT = 0.5
 
 from battle_memory import BattleMemory, Steering
+from projectile_dodge import ProjectileDodge
 from ability_buttons import AbilityButtons
 
 class Play:
@@ -167,6 +168,8 @@ class Play:
         else:
             self.playstyle_code = playstyle_code
         self.battle_memory = BattleMemory()
+        self.projectile_dodge = ProjectileDodge()
+        self.projectile_dodge_enabled = config_bool(bot_config.get('projectile_dodge'), True)
         self.steering = Steering()
         from bush_cover import BushCover
         self.bush_cover = BushCover()
@@ -1175,6 +1178,9 @@ class Play:
             movement = self.remembered_movement(movement, data, current_time, escaping=True)
             self.steering.previous = None
             self.fix_movement_keys['toggled'] = False
+        dodge_started = time.perf_counter()
+        movement = self.dodge_movement(movement, data, time.time(), escaping=gas_vector is not None)
+        self.latency['dodge_planning_ms'] = (time.perf_counter() - dodge_started) * 1000
         self.last_movement = movement
         if gas_vector is not None:
             self.last_movement_change_time = current_time
@@ -1184,9 +1190,45 @@ class Play:
         self.safety_telemetry = {
             'desired': movement_vector,
             'final': movement,
-            'override_reason': 'CLASSIC_GAS_ESCAPE' if gas_vector is not None else 'CLASSIC_GAMEPLAY',
+            'override_reason': ('CLASSIC_GAS_ESCAPE' if gas_vector is not None else
+                'PROJECTILE_DODGE' if self.projectile_dodge.active else 'CLASSIC_GAMEPLAY'),
         }
         return movement
+
+    def dodge_movement(self, movement, data, now, escaping=False):
+        """Only a confirmed fresh trajectory may override ordinary steering."""
+        dodge = self.projectile_dodge
+        dodge.active = False
+        if escaping or not self.projectile_dodge_enabled or not dodge.threats:
+            return movement
+        if self.gas_avoidance and not self.gas_detection_ok:
+            return movement
+        player_box = data['player'][0]
+        player, radius = self.get_player_hit_circle(player_box)
+        vector = self.movement_to_vector(movement)
+        if player is None or vector is None:
+            return movement
+        speed = self.TILE_SIZE * self.window_controller.scale_factor * 2.3
+
+        def safe(direction):
+            # Unit vectors would be ignored by the joystick's near-zero check.
+            step = self.clamp_movement(direction)
+            if self.is_path_blocked(player_box, step, data['wall'], distance=speed * .45):
+                return False
+            if not self.safe_memory_step(step, player_box, data['wall']):
+                return False
+            if self.gas_mask is not None:
+                from gas_guard import corridor_peak
+                summary = getattr(self, '_decision_gas_integral', None)
+                integral = summary[1] if summary is not None and summary[0] is self.gas_mask else None
+                reach = max(self.gas_reach, speed * .45 / max(2 * radius, 1))
+                if corridor_peak(self.gas_mask, self.get_actual_player_box(player_box),
+                                 step, reach, integral=integral) >= .20:
+                    return False
+            return True
+
+        chosen = dodge.choose(vector, player, radius, speed, now, safe)
+        return self.clamp_movement(chosen) if dodge.active else movement
 
     def safe_memory_step(self, vector, player_box, walls):
         v = self.movement_to_vector(vector)
@@ -1489,9 +1531,11 @@ class Play:
         frame_time = getattr(main, 'current_frame_time', current_time)
         if not self.window_controller.frame_is_fresh(frame_time):
             self.window_controller.release_all_inputs()
+            self.projectile_dodge.reset()
             return
         state = main.get_latest_state()
         if state != 'match':
+            self.projectile_dodge.reset()
             self.window_controller.gameplay_frame_time = None
             self.window_controller.release_all_inputs()
             self.clear_gas_state()
@@ -1500,6 +1544,7 @@ class Play:
         from battle_perception import respawning
         from state_finder import is_respawning
         if respawning(frame) or is_respawning(frame):
+            self.projectile_dodge.reset()
             self.window_controller.release_all_inputs()
             self.window_controller.gameplay_frame_time = None
             self.clear_gas_state()
@@ -1516,6 +1561,7 @@ class Play:
             self.incoming_damage = IncomingDamage()
             self.behavior_report = {}
             self.battle_memory.reset()
+            self.projectile_dodge.reset()
             self.steering = Steering()
             self.ability_buttons = AbilityButtons()
             self.fix_movement_keys['toggled'] = False
@@ -1543,6 +1589,7 @@ class Play:
             self.time_since_player_last_found = time.time()
 
         if not data:
+            self.projectile_dodge.reset()
             # No player to measure, so the last gas reading would be about a
             # brawler that is no longer on screen.
             self.clear_gas_state()
@@ -1563,6 +1610,7 @@ class Play:
         player_box = data['player'][0] if data.get('player') else None
         gas_movement = self.avoid_gas(frame, player_box, data.get('wall') or [], current_time)
         if self.gas_avoidance and not self.gas_detection_ok:
+            self.projectile_dodge.reset()
             self.gas_state = 'UNAVAILABLE'
             self.window_controller.release_all_inputs()
             self.world_state = {'timestamp': frame_time, 'state': 'match', 'player_present': True,
@@ -1570,7 +1618,16 @@ class Play:
             return
         if not self.window_controller.begin_gameplay_frame(frame, frame_time):
             self.window_controller.release_all_inputs()
+            self.projectile_dodge.reset()
             return
+        started = time.perf_counter()
+        if self.projectile_dodge_enabled and gas_movement is None:
+            player, _ = self.get_player_hit_circle(player_box)
+            self.projectile_dodge.observe(frame, frame_time, player,
+                data['player'] + data['enemy'] + data['teammate'])
+        else:
+            self.projectile_dodge.reset()
+        self.latency['dodge_ms'] = (time.perf_counter() - started) * 1000
         movement = self.loop(brawler, data, current_time, gas_movement)
         self.gas_state = 'ESCAPE' if self.gas_in_danger else 'SAFE'
         self.latency.update(entity_ms=self.Detect_main_info.last_inference_ms,
@@ -1590,7 +1647,8 @@ class Play:
                             'gas_detections': getattr(self.Detect_gas, 'last_detections', []),
                             'gas_model_confidence_threshold': self.gas_confidence,
                             'gas_observed_at': self.gas_observed_at,
-                            'movement': self.safety_telemetry, 'abilities': self.ability_buttons.snapshot()}
+                            'movement': self.safety_telemetry, 'abilities': self.ability_buttons.snapshot(),
+                            'projectile_dodge': self.projectile_dodge.snapshot()}
         self.publish_debug_view(frame, data, state, movement)
         if movement is not None:
             started = time.perf_counter()

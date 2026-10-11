@@ -5,6 +5,7 @@
 #   most_trophies   - Most Trophies
 #   by_name         - Name
 minimum_movement_delay = 0.1
+projectile_dodge = true
 unstuck_movement_delay = 2.4
 unstuck_movement_hold_time = 1.4
 perceived_tile_size = 54

@@ -128,6 +128,7 @@ def read_settings(key: str) -> dict[str, Any]:
         if "bot_config" in settings:
             from work_modes import resolve
             settings["bot_config"] = {**settings["bot_config"], "work_mode": resolve(settings["bot_config"])}
+            settings['bot_config'].setdefault('projectile_dodge', True)
         return settings
 
 
@@ -153,6 +154,8 @@ def _update_settings(key: str, section: str, updates: dict[str, Any]) -> dict[st
         if filename == 'bot_config.toml' and 'work_mode' not in current:
             from work_modes import resolve
             current['work_mode'] = resolve(current)
+        if filename == 'bot_config.toml':
+            current.setdefault('projectile_dodge', True)
         merged = dict(current or {})
         for name, value in (updates or {}).items():
             from settings_schema import validate, SECRET_KEYS
