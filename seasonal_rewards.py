@@ -23,7 +23,10 @@ def modern_daily_reward(frame):
     if not _match(white,_glyph(TITLE,h)):return False
     # The large star is independent evidence; DAILY WINS alone is insufficient.
     small=cv2.resize(frame,(320,180),interpolation=cv2.INTER_AREA)
-    dark=np.all(small<50,axis=2).astype(np.uint8)*255
+    # Legendary uses a brown/gold outline instead of the dark rare-star outline.
+    red,green,blue=cv2.split(small.astype(np.float32))
+    amber=(red>green*1.5)&(green>blue*1.5)&(green<130)
+    dark=(np.all(small<50,axis=2)|amber).astype(np.uint8)*255
     contours,_=cv2.findContours(dark,cv2.RETR_LIST,cv2.CHAIN_APPROX_SIMPLE)
     stars=[]
     for c in contours:
