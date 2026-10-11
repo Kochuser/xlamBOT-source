@@ -145,6 +145,14 @@ def get_in_game_state(image):
         from showdown_hud import visible_showdown_caption
         if visible_showdown_caption(image):
             return 'match'
+        # A confirmed result control lets completed matches bypass unrelated
+        # first-run/reward scans without resizing their evidence. Modal and
+        # battle evidence retain priority, and placement is still required.
+        from current_results import result_proceed_visible
+        if result_proceed_visible(image):
+            result = find_game_result(image)
+            if result:
+                return f'end_{result}'
         from onboarding import onboarding_screen
         from showdown_mode import event_screen
         from showdown_mode import trio_win_next
