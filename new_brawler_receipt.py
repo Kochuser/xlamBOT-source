@@ -32,7 +32,9 @@ def _locate(frame, encoded, bounds, yellow=False):
 
 def new_brawler_continue_position(frame):
     if frame is None or frame.ndim!=3 or frame.shape[2]!=3:return None
-    if _locate(frame,TITLE,(.43,.10,.96,.34),yellow=True) is None:return None
+    if _locate(frame,TITLE,(.43,.10,.96,.34),yellow=True) is None:
+        from support_receipt import support_continue_position
+        return support_continue_position(frame)
     position=_locate(frame,CONTINUE,(.46,.78,.70,.94))
     if position is None:return None
     # Confirm the blue action behind its lettering. The green Select control

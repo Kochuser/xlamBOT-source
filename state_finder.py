@@ -168,6 +168,9 @@ def get_in_game_state(image):
         from brawler_blast import brawler_blast_fire_position
         if brawler_blast_fire_position(image) is not None:
             return 'brawler_blast'
+        from support_receipt import support_continue_position
+        if support_continue_position(image) is not None:
+            return 'new_brawler'
         from onboarding import onboarding_screen
         from showdown_mode import event_screen
         from showdown_mode import trio_win_next
