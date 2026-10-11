@@ -2,7 +2,7 @@
 import cv2
 import numpy as np
 from reward_receipts import _glyph, _valid
-from brawler_blast_glyphs import TAP, ARROW, BONUS, LEFT_GUN, RIGHT_GUN, DOME
+from brawler_blast_glyphs import TAP, ARROW, BONUS, LEFT_GUN, RIGHT_GUN, DOME, DOME_GLOW
 
 
 def _find(frame, encoded, bounds, pink=False):
@@ -60,18 +60,23 @@ def _gallery_control(frame):
     h,w=frame.shape[:2]
     gray=cv2.cvtColor(frame,cv2.COLOR_RGB2GRAY)
     left=None
-    for encoded,bounds in ((LEFT_GUN,(0,.5,.21,.80)),(RIGHT_GUN,(.79,.5,1,.80)),
-                           (DOME,(.39,.71,.46,.91))):
+    for variants,bounds in (((LEFT_GUN,),(0,.5,.21,.80)),((RIGHT_GUN,),(.79,.5,1,.80)),
+                            ((DOME,DOME_GLOW),(.39,.71,.46,.91))):
         x1,y1,x2,y2=bounds;x,y=round(w*x1),round(h*y1)
         roi=gray[y:round(h*y2),x:round(w*x2)]
-        glyph=_glyph(encoded,h)
-        if not roi.size or any(roi.shape[i]<glyph.shape[i] for i in (0,1)):
+        matched=None
+        for encoded in variants:
+            glyph=_glyph(encoded,h)
+            if not roi.size or any(roi.shape[i]<glyph.shape[i] for i in (0,1)):
+                continue
+            _,score,_,position=cv2.minMaxLoc(cv2.matchTemplate(roi,glyph,cv2.TM_CCOEFF_NORMED))
+            if score>=.95:
+                matched=position
+                break
+        if matched is None:
             return None
-        _,score,_,position=cv2.minMaxLoc(cv2.matchTemplate(roi,glyph,cv2.TM_CCOEFF_NORMED))
-        if score<.95:
-            return None
-        if encoded==LEFT_GUN:
-            left=(x+position[0]+134*h/720,y+position[1]+35*h/720)
+        if variants==(LEFT_GUN,):
+            left=(x+matched[0]+134*h/720,y+matched[1]+35*h/720)
     # Confirm the live yellow cap in RGB as well as the three independent graphics.
     cx,cy=left
     cap=frame[round(cy-h*.012):round(cy+h*.012),round(cx-h*.012):round(cx+h*.012)]
