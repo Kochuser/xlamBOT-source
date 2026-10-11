@@ -21,6 +21,14 @@ KNOWN_BS_PACKAGES = ("com.supercell.brawlstars", "bsd.suitcase.release")
 # подобные. Перечислять их по одному бессмысленно, поэтому любое имя семейства
 # bsd.suitcase.* считается игрой.
 PRIVATE_BS_PREFIXES = ("bsd.suitcase.",)
+NON_GAME_PACKAGES = frozenset({'android', 'com.android.launcher3', 'com.android.systemui',
+    'com.android.settings', 'com.ldmnq.launcher3', 'com.miui.home',
+    'com.sec.android.app.launcher', 'com.huawei.android.launcher'})
+
+
+def known_brawl_package(package):
+    return any(package == known or package.startswith(known + '.')
+               for known in KNOWN_BS_PACKAGES) or package.startswith(PRIVATE_BS_PREFIXES)
 
 
 def capture_fps_limit(max_fps):
@@ -107,7 +115,7 @@ def is_brawl_stars_package(target) -> bool:
             print(f"Error reading the foreground app: {e}")
             return False
     package = str(package or "").strip()
-    if not package:
+    if not package or package in NON_GAME_PACKAGES:
         return False
     if any(package == known or package.startswith(f"{known}.")
            for known in KNOWN_BS_PACKAGES):
@@ -205,6 +213,7 @@ class WindowController:
                 self.device = discover_device(verbose=self.verbose_debug)
             self.serial = self.device.serial
             self._device_lease = DeviceLease(self.serial)
+            self._repair_system_package()
             print(f"Connected to device: {self.serial}")
 
             self.frame_lock = threading.Lock()
@@ -469,35 +478,53 @@ class WindowController:
         for package in dict.fromkeys((self.BRAWL_STARS_PACKAGE, *KNOWN_BS_PACKAGES)):
             # A failed query is unavailable evidence, not a missing process.
             # Let the owner enter transport recovery instead of restarting it.
-            if self.device.shell(["pidof", package], timeout=5).strip():
+            if package not in NON_GAME_PACKAGES and self.device.shell(["pidof", package], timeout=5).strip():
                 return True
-        if is_brawl_stars_package(foreground_package(self.device)):
-            self._adopt_foreground_package()
+        opened = str(foreground_package(self.device) or '').strip()
+        if is_brawl_stars_package(opened):
+            self._adopt_foreground_package(opened)
             return True
         return False
 
-    def _adopt_foreground_package(self):
+    def _repair_system_package(self):
+        if self.BRAWL_STARS_PACKAGE not in NON_GAME_PACKAGES:
+            return
+        packages = self.device.shell(['pm', 'list', 'packages'], timeout=5)
+        candidates = {line.removeprefix('package:').strip() for line in packages.splitlines()
+                      if line.startswith('package:') and known_brawl_package(line.removeprefix('package:').strip())}
+        if len(candidates) != 1:
+            raise ValueError('Select the installed Brawl Stars package in device settings; the saved package is a system app.')
+        if not self._adopt_foreground_package(candidates.pop()):
+            raise OSError('Could not repair the saved Brawl Stars package.')
+
+    def _adopt_foreground_package(self, opened=None):
         """Remember which package the game actually runs under.
 
         Without this every later launch and stop names a package the device does
         not have, so the game is never really restarted when it does die.
         """
         try:
-            opened = str(foreground_package(self.device) or "").strip()
+            opened = str(foreground_package(self.device) if opened is None else opened).strip()
         except Exception as e:  # noqa: BLE001
             print(f"Error reading the foreground package: {e}")
-            return
-        if not opened or opened == self.BRAWL_STARS_PACKAGE:
-            return
+            return False
+        if not known_brawl_package(opened):
+            return False
+        if opened == self.BRAWL_STARS_PACKAGE:
+            return True
         try:
-            general_config = load_toml_as_dict("cfg/general_config.toml")
-            general_config["brawl_stars_package"] = opened
-            save_dict_as_toml(general_config, "cfg/general_config.toml")
-            invalidate_toml_cache("cfg/general_config.toml")
+            from device_profiles import _SETTINGS_LOCK
+            with _SETTINGS_LOCK:
+                general_config = load_toml_as_dict("cfg/general_config.toml", cache=False)
+                general_config["brawl_stars_package"] = opened
+                save_dict_as_toml(general_config, "cfg/general_config.toml")
+                invalidate_toml_cache("cfg/general_config.toml")
             self.BRAWL_STARS_PACKAGE = opened
             print(f"Brawl Stars runs under '{opened}'. Saved that in the config.")
+            return True
         except Exception as e:  # noqa: BLE001
             print(f"Could not save the detected Brawl Stars package: {e}")
+            return False
 
     def restart_brawl_stars(self):
         self.device.app_stop(self.BRAWL_STARS_PACKAGE)
@@ -510,9 +537,9 @@ class WindowController:
         opened_app = foreground_package(self.device).strip()
         if is_brawl_stars_package(opened_app):
             if opened_app != self.BRAWL_STARS_PACKAGE:
-                self._adopt_foreground_package()
+                self._adopt_foreground_package(opened_app)
             return True
-        return opened_app == self.BRAWL_STARS_PACKAGE.strip()
+        return False
 
     def screenshot(self):
         frame, frame_time = self.get_latest_frame()
