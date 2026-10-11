@@ -80,6 +80,7 @@ class WebDataService:
     }
 
     BOT_FIELDS: dict[str, tuple[str, Any]] = {
+        "projectile_dodge": ("bool", True),
         "play_again_on_win": ("bool_str", False),
         "minimum_movement_delay": ("float", 0.1),
         "unstuck_movement_delay": ("float", 2.4),

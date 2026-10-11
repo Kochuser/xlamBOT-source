@@ -1,5 +1,6 @@
 /* Plain-language labels. Kept together with English so settings stay complete. */
 window.XlamSettingsFields = {
+ projectile_dodge:['Уклоняться от видимых снарядов','Dodge visible projectiles','Следит за небольшими красными и розовыми снарядами по нескольким кадрам. Газ важнее уклонения. При низком FPS быстрые выстрелы могут быть пропущены.','Tracks small red and pink projectiles across several frames. Gas escape has priority. Fast shots can be missed at low FPS.'],
  work_mode:['Режим работы','Bot mode','1 — Сидеть в кустах, 2 — Выживание, 3 — Баланс, 4 — Агрессия, 5 — Натиск. Настраивается на карточке устройства.','1 Bush camping, 2 Survival, 3 Balanced, 4 Aggressive, 5 Onslaught. Configure this on the device card.'],
  brawler_switch_after_games:['Матчей до смены бойца','Matches before switching','0 — играть на одном бойце без смены.','0 keeps the same brawler.'],
  brawler_pick_mode:['Как выбирать бойца','Brawler selection','Игра сортирует список; бот выбирает первую карточку.','The game sorts the list; the bot picks the first card.'],
