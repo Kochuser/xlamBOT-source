@@ -73,6 +73,7 @@ class StageManager:
             'reward_received': self.dismiss_received_reward,
             'new_brawler': self.dismiss_new_brawler,
             'daily_reward': self.dismiss_daily_reward,
+            'rating_dialog': self.dismiss_rating_dialog,
             'seasonal_announcement': self.dismiss_seasonal_announcement,
             'team_panel': self.close_team_panel,
             'side_menu': self.close_side_menu,
@@ -971,6 +972,23 @@ class StageManager:
         self.window_controller.release_all_inputs()
         self.window_controller.gameplay_frame_time = None
         self.window_controller.click(w*.5, h*.5, already_include_ratio=True)
+
+    def dismiss_rating_dialog(self):
+        if self._should_stop() or self._should_pause():
+            return
+        now = time.monotonic()
+        if now - getattr(self, '_last_rating_later_tap', -100) < 1.5:
+            return
+        from rating_dialog import rating_later_position
+        frame = self.window_controller.screenshot()
+        position = rating_later_position(frame)
+        fresh = getattr(self.window_controller, 'frame_is_fresh', lambda: True)
+        if position is None or not fresh() or self._should_stop() or self._should_pause():
+            return
+        self.window_controller.release_all_inputs()
+        self.window_controller.gameplay_frame_time = None
+        self.window_controller.click(*position, already_include_ratio=True)
+        self._last_rating_later_tap = now
 
     def reset_unknown_recovery(self):
         self._unknown_since = None
