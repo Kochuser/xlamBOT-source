@@ -79,27 +79,37 @@ class ProjectileDodge:
 
     def observe(self, frame, stamp, player, excluded):
         self.active = False
-        self.threats = []
-        self.camera_ok = False
         if frame is None or not math.isfinite(stamp):
             self.reset()
             return
         if self.stamp is not None and stamp <= self.stamp:
+            self.threats = []
+            self.camera_ok = False
             return
         h, w = frame.shape[:2]
         if self.shape is not None and self.shape != (h, w):
             self.reset()
+        if self.stamp is not None and stamp - self.stamp < 0.02:
+            # Preserve the original observation time while accumulating displacement.
+            # Updating it here would prevent every 60-FPS frame from ever matching.
+            return
+        self.threats = []
+        self.camera_ok = False
         self.shape = (h, w)
         small = reduced_frame(frame)
-        gray = cv2.cvtColor(
-            cv2.resize(small, CAMERA_SIZE, interpolation=cv2.INTER_AREA),
-            cv2.COLOR_RGB2GRAY,
-        ).astype(np.float32)
         points = components(frame, player, excluded, small=small)
+        gray = (
+            cv2.cvtColor(
+                cv2.resize(small, CAMERA_SIZE, interpolation=cv2.INTER_AREA),
+                cv2.COLOR_RGB2GRAY,
+            ).astype(np.float32)
+            if points
+            else None
+        )
         dt = stamp - self.stamp if self.stamp is not None else 0
         shift = (0.0, 0.0)
         valid = False
-        if self.gray is not None and 0.02 <= dt <= 0.35:
+        if self.gray is not None and gray is not None and 0.02 <= dt <= 0.35:
             delta, response = cv2.phaseCorrelate(self.gray, gray)
             shift = (delta[0] * w / CAMERA_SIZE[0], delta[1] * h / CAMERA_SIZE[1])
             valid = (
@@ -236,5 +246,6 @@ class ProjectileDodge:
             tracked=len(self.tracks),
             threats=len(self.threats),
             camera_ok=self.camera_ok,
+            observed_at=self.stamp,
             shots=[dict(shot) for shot in self.threats[:8]],
         )
