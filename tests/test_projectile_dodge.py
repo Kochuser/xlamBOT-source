@@ -64,6 +64,91 @@ class ProjectileDodgeTests(unittest.TestCase):
         )
         self.assertFalse(dodge.active)
 
+    def test_fast_projectile_can_associate_inside_the_supported_speed_bound(self):
+        dodge = ProjectileDodge()
+        for i in range(3):
+            dodge.observe(self.frame((942-96*i,380)),10+i*.08,self.player,[])
+        self.assertEqual(len(dodge.threats),1)
+        self.assertAlmostEqual(dodge.threats[0]['vx'],-1200,delta=25)
+
+    def test_urgent_pair_reacts_before_third_frame_to_a_close_fast_impact(self):
+        dodge = ProjectileDodge()
+        for i in range(2):
+            dodge.observe(self.frame((942-96*i,380)),10+i*.08,self.player,[],body=15)
+        self.assertEqual(len(dodge.threats),1)
+        self.assertEqual(dodge.threats[0]['confirmation'],'urgent_pair')
+        self.assertEqual(dodge.threats[0]['hits'],2)
+        dodge.choose((100,0),self.player,15,130,10.08,lambda v:True)
+        self.assertTrue(dodge.active)
+
+    def test_two_frame_miss_receding_shot_and_uncertain_camera_are_not_urgent(self):
+        for case in ('miss','receding','camera','no_body'):
+            dodge=ProjectileDodge()
+            for i in range(2):
+                x=846+96*i if case=='receding' else 942-96*i
+                y=480 if case=='miss' else 380
+                if case=='camera':
+                    with patch('projectile_dodge.cv2.phaseCorrelate',return_value=((0.,0.),.6)):
+                        dodge.observe(self.frame((x,y)),10+i*.08,self.player,[],body=15)
+                else:dodge.observe(self.frame((x,y)),10+i*.08,self.player,[],body=None if case=='no_body' else 15)
+            self.assertFalse(dodge.threats,case)
+
+    def test_jump_beyond_speed_limit_does_not_confirm_a_fast_pair(self):
+        dodge=ProjectileDodge()
+        for i,x in enumerate((930,720)):
+            dodge.observe(self.frame((x,380)),10+i*.08,self.player,[],body=15)
+        self.assertFalse(dodge.threats)
+        self.assertEqual(dodge.tracks[0]['hits'],1)
+
+    def test_growing_effect_and_invalid_camera_response_cannot_create_urgent_pair(self):
+        dodge=ProjectileDodge()
+        for i,radius in enumerate((5.,8.)):
+            with patch('projectile_dodge.components',return_value=[(942.-96*i,380.,radius)]):
+                dodge.observe(self.frame(None),10+i*.08,self.player,[],body=15)
+        self.assertFalse(dodge.threats)
+        dodge=ProjectileDodge()
+        for i in range(2):
+            with patch('projectile_dodge.cv2.phaseCorrelate',return_value=((0.,0.),float('inf'))):
+                dodge.observe(self.frame((942-96*i,380)),10+i*.08,self.player,[],body=15)
+        self.assertFalse(dodge.threats);self.assertFalse(dodge.camera_ok)
+
+    def test_urgent_pair_keeps_original_timestamp_and_expires_after_gap(self):
+        dodge=ProjectileDodge()
+        for i in range(2):dodge.observe(self.frame((942-96*i,380)),10+i*.08,self.player,[],body=15)
+        stamp=dodge.stamp
+        dodge.observe(self.frame((840,380)),10.09,self.player,[],body=15)
+        self.assertEqual(dodge.snapshot()['observed_at'],stamp)
+        self.assertEqual(dodge.choose((100,0),self.player,15,130,10.24,lambda v:True),(100,0))
+        dodge.observe(self.frame((710,380)),11,self.player,[],body=15)
+        self.assertFalse(dodge.threats)
+
+    def test_collision_free_crossfire_escape_outranks_preference(self):
+        dodge=ProjectileDodge();dodge.stamp=10.
+        dodge.threats=[
+            dict(x=-88.56297325499007,y=68.2235156500987,vx=-186.30828659859108,vy=-306.0696052731995,r=5.),
+            dict(x=-105.98341049395839,y=27.53089876090573,vx=382.63951790149906,vy=-10.570577108815655,r=5.)]
+        safe=lambda v:abs(v[1])<1e-6 and abs(v[0])>.9
+        chosen=dodge.choose((100,100),(0,0),20,100,10.,safe)
+        self.assertLess(chosen[0],0)
+        velocity=tuple(x*100/math.hypot(*chosen) for x in chosen)
+        self.assertGreater(dodge.clearance(dodge.threats,(0,0),20,velocity),0)
+
+    def test_heading_hold_cannot_keep_collision_when_free_escape_exists(self):
+        dodge=ProjectileDodge();dodge.stamp=10.;dodge.heading=(1.,0.);dodge.heading_at=9.9
+        dodge.threats=[
+            dict(x=-88.56297325499007,y=68.2235156500987,vx=-186.30828659859108,vy=-306.0696052731995,r=5.),
+            dict(x=-105.98341049395839,y=27.53089876090573,vx=382.63951790149906,vy=-10.570577108815655,r=5.)]
+        chosen=dodge.choose((100,100),(0,0),20,100,10.,lambda v:abs(v[1])<1e-6 and abs(v[0])>.9)
+        self.assertLess(chosen[0],0)
+
+    def test_stopping_avoids_crossing_shot_when_moving_routes_are_blocked(self):
+        dodge=ProjectileDodge();dodge.stamp=10.
+        dodge.threats=[dict(x=700.,y=310.,vx=0.,vy=200.,r=5.)]
+        chosen=dodge.choose((100,0),self.player,20,130,10.,lambda v:math.hypot(*v)<1e-6)
+        self.assertEqual(chosen,(0.,0.));self.assertTrue(dodge.active)
+        self.assertGreater(dodge.clearance(dodge.threats,self.player,20,(0,0)),0)
+        self.assertEqual(dodge.snapshot()['plan']['reason'],'hold_position')
+
     def test_camera_pan_does_not_turn_stationary_effect_into_projectile(self):
         dodge = ProjectileDodge()
         for i in range(4):
@@ -207,6 +292,27 @@ class ProjectileDodgeTests(unittest.TestCase):
         result = play.dodge_movement((100, 0), data, 10.17)
         self.assertTrue(play.projectile_dodge.active)
         self.assertGreater(result[1], 0)
+
+    def test_integrated_stop_releases_movement_without_sending_touch(self):
+        play=self.play();data=dict(player=[[625,355,655,433]],wall=[])
+        center,_=play.get_player_hit_circle(data['player'][0])
+        play.projectile_dodge.threats=[dict(x=center[0]+60,y=center[1]-70,vx=0.,vy=200.,r=5.)]
+        play.is_path_blocked=lambda b,v,w,**kw:math.hypot(*v)>1e-6
+        chosen=play.dodge_movement((100,0),data,10.17)
+        self.assertEqual(chosen,(0.,0.));self.assertTrue(play.projectile_dodge.active)
+        play.window_controller.move=Mock();play.window_controller.release_movement=Mock()
+        play.do_movement(chosen)
+        play.window_controller.release_movement.assert_called_once()
+        play.window_controller.move.assert_not_called()
+
+    def test_stop_candidate_is_rejected_on_current_gas_terrain(self):
+        play=self.play();data=dict(player=[[625,355,655,433]],wall=[])
+        center,_=play.get_player_hit_circle(data['player'][0])
+        play.projectile_dodge.threats=[dict(x=center[0]+60,y=center[1]-70,vx=0.,vy=200.,r=5.)]
+        play.is_path_blocked=lambda b,v,w,**kw:math.hypot(*v)>1e-6
+        play.gas_mask[340:450,620:665]=255
+        self.assertEqual(play.dodge_movement((100,0),data,10.17),(100,0))
+        self.assertFalse(play.projectile_dodge.active)
 
     def test_confirmed_shot_never_overrides_gas_escape_or_disabled_setting(self):
         play = self.play()
