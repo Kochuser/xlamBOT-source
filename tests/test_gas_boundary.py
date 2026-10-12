@@ -6,6 +6,20 @@ from gas_guard import improving_escape
 from play import Play
 
 class GasBoundaryTests(unittest.TestCase):
+    def test_neighbouring_clouds_form_one_front_with_sprite_gaps(self):
+        mask=np.zeros((720,1280),np.uint8)
+        for y in range(150,680,70):mask[y:y+50,450:500]=255
+        p=GasBoundary();v=p.observe(mask,[565,325,615,375],41,lambda v,d:False)
+        self.assertGreater(v[0],.8);self.assertTrue(p.active)
+        self.assertEqual(np.count_nonzero(mask[200:220,450:500]),0)
+
+    def test_sparse_distant_islands_do_not_become_a_front(self):
+        mask=np.zeros((720,1280),np.uint8)
+        for y in (180,350,550):mask[y:y+40,500:540]=255
+        p=GasBoundary()
+        self.assertIsNone(p.observe(mask,[565,325,615,375],41,lambda v,d:False))
+        self.assertFalse(p.active)
+
     def test_live_isolated_detections_do_not_create_a_closing_front(self):
         mask=np.zeros((720,1280),np.uint8)
         for x1,y1,x2,y2 in [(33,520,121,581),(522,453,584,502),(86,614,118,645),(0,551,23,591)]:
