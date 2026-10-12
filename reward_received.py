@@ -9,6 +9,9 @@ def is_reward_received(frame):
     from unlocked_receipt import unlocked_receipt
     if unlocked_receipt(frame):
         return True
+    from single_star_power_receipt import single_star_power_receipt
+    if single_star_power_receipt(frame):
+        return True
     from star_power_receipt import star_power_receipt
     if star_power_receipt(frame):
         return True
