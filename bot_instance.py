@@ -316,6 +316,14 @@ class BotInstance:
         return self._classify_frame(frame, frame_time, for_action=True)
 
     def _classify_frame(self, frame, frame_time, for_action=False):
+        decision = getattr(self.window_controller, '_decision', None)
+        owner = getattr(self.window_controller, 'input_owner', None)
+        if (not for_action and isinstance(decision, tuple) and len(decision) == 3
+                and decision[2] and decision[0] == owner):
+            # A menu transaction takes several independently classified
+            # screenshots. Its owner has priority between those screenshots;
+            # starting a background pass in each gap would starve selection.
+            return None
         # A decoder/recognizer and the menu owner must not perform two costly
         # full classifiers on the same device concurrently. Never wait while
         # retaining an old input frame: the owner retries from a new capture.

@@ -72,3 +72,36 @@ class ClassificationBudgetTests(unittest.TestCase):
         with patch.dict(runtime_fixture.BotInstance._classify_frame.__globals__,{'get_state':full}),patch('state_finder.get_action_state') as action:
             self.assertEqual(bot._classify_frame(frame,time.time()),'unknown')
         full.assert_called_once_with(frame);action.assert_not_called()
+
+    def test_menu_owner_retains_priority_between_consecutive_screenshots(self):
+        bot=self.bot();frame=np.zeros((4,4,3),np.uint8);owner=threading.get_ident()
+        bot.window_controller.input_owner=owner
+        bot.window_controller._decision=(owner,bot.observations.snapshot(),True)
+        full=Mock(return_value='lobby')
+        with patch.dict(runtime_fixture.BotInstance._classify_frame.__globals__,{'get_state':full}),patch('state_finder.get_action_state',side_effect=['brawler_selection','brawler_detail']) as action:
+            first=bot.observe_action_frame(frame,time.time())
+            self.assertIsNone(bot._classify_frame(frame,time.time()))
+            second=bot.observe_action_frame(frame,time.time())
+        self.assertEqual((first.state,second.state),('brawler_selection','brawler_detail'))
+        self.assertGreater(second.epoch,first.epoch)
+        self.assertEqual(action.call_count,2);full.assert_not_called()
+
+    def test_background_resumes_after_menu_scope_and_remains_active_in_battle(self):
+        bot=self.bot();frame=np.zeros((4,4,3),np.uint8);owner=threading.get_ident()
+        bot.window_controller.input_owner=owner
+        full=Mock(return_value='match')
+        with patch.dict(runtime_fixture.BotInstance._classify_frame.__globals__,{'get_state':full}):
+            bot.window_controller._decision=(owner,bot.observations.snapshot(),False)
+            self.assertEqual(bot._classify_frame(frame,time.time()),'match')
+            bot.window_controller._decision=None
+            self.assertEqual(bot._classify_frame(frame,time.time()),'match')
+        self.assertEqual(full.call_count,2)
+
+    def test_non_owner_scope_cannot_suppress_background_observations(self):
+        bot=self.bot();frame=np.zeros((4,4,3),np.uint8);owner=threading.get_ident()
+        bot.window_controller.input_owner=owner
+        bot.window_controller._decision=(owner+1,bot.observations.snapshot(),True)
+        full=Mock(return_value='lobby')
+        with patch.dict(runtime_fixture.BotInstance._classify_frame.__globals__,{'get_state':full}):
+            self.assertEqual(bot._classify_frame(frame,time.time()),'lobby')
+        full.assert_called_once()
