@@ -770,16 +770,15 @@ class Play:
         self.gas_coverage = 0.0
         self.gas_escape_direction = None
         self.gas_escape_index = None
+        if hasattr(self, 'gas_boundary'):
+            self.gas_boundary.reset()
         self.update_gas_danger(0.0)
 
     def update_gas_danger(self, coverage):
         """Latch "the player is standing in gas" with hysteresis.
 
-        Showdown gas comes as scattered patches, so running on the first sign of
-        it made the bot thrash and never fight. The flight starts once
-        `gas_danger_enter` of the body is covered and only ends after the share
-        drops back to `gas_danger_exit`, so the edge of a patch no longer flips
-        the bot back and forth.
+        Coverage is the emergency latch after contact with the closing front.
+        Early retreat keeps a separate clearance buffer before this latch fires.
         """
         if self.gas_in_danger:
             self.gas_in_danger = coverage > self.gas_danger_exit
@@ -794,7 +793,7 @@ class Play:
         return bool(self.gas_in_danger)
 
     def map_centre(self, image=None):
-        """Middle of the arena, in the coordinates the boxes are in."""
+        """Legacy screen-space fallback, not a measured world/map centre."""
         if image is not None and getattr(image, "ndim", 0) >= 2:
             height, width = image.shape[:2]
             return width / 2, height / 2
@@ -857,8 +856,7 @@ class Play:
 
         Every direction is scored by the gas share of the corridor it walks
         down, minus a bonus for pointing back at the middle of the map: showdown
-        gas does more damage the further out the player is, so a clean step
-        inwards beats an equally clean step sideways. Shares under
+        the fallback prefers inward screen-space motion. Shares under
         `gas_sensitivity` count as clean, which lets that bonus decide between
         two sides instead of a few stray pixels. A side the player cannot walk
         into because of a wall is pushed to the back of the queue.
@@ -919,8 +917,8 @@ class Play:
     def _toward_centre(self, player_box, image=None):
         """Unit vector from the player to the middle of the arena.
 
-        Gas damage grows with the distance from the centre, so when no side is
-        clear at all, the way inwards is still the way that hurts least.
+        This legacy fallback is not proof of a safe destination; final swept
+        body checks must still confirm any proposed movement.
         """
         if not player_box or len(player_box) < 4:
             return None
@@ -938,12 +936,10 @@ class Play:
     def avoid_gas(self, image=None, player_box=None, walls=None, current_time=None):
         """Movement that walks the player out of the gas, or None for none.
 
-        A direction is only picked while the player is actually in gas (see
-        `update_gas_danger`); the rest of the time this returns None and the
-        playstyle's own movement is used untouched. Inside a cloud the eight
-        directions are scored as in `_clearest_escape`, and the winner is held
-        for `gas_escape_cooldown` so the joystick is not rubbed between two
-        neighbouring directions every frame.
+        Keep a two-tile body clearance before contact with the closing front.
+        A separate hysteresis band prevents chasing back towards the same edge.
+        After contact, prefer a verified visible clean endpoint. The legacy
+        emergency direction still passes the same wall and swept-gas checks.
         """
         if image is None:
             image = self.frame
@@ -954,12 +950,23 @@ class Play:
 
         self.refresh_gas(image, player_box)
 
+        from gas_boundary import GasBoundary
+        if not hasattr(self, 'gas_boundary'):
+            self.gas_boundary=GasBoundary()
+        if getattr(self,'gas_detection_ok',True) and self.gas_mask is not None and player_box and len(player_box)>=4:
+            actual=self.get_actual_player_box(player_box) or player_box
+            tile=getattr(self,'TILE_SIZE',max(actual[2]-actual[0],actual[3]-actual[1]))*getattr(getattr(self,'window_controller',None),'scale_factor',1.)
+            buffered=self.gas_boundary.observe(self.gas_mask,actual,tile,
+                lambda vector,distance:self.is_path_blocked(player_box,vector,walls or [],distance=distance))
+        else:
+            self.gas_boundary.reset();buffered=None
         if not self.gas_in_danger:
             self.gas_escape_direction = None
             self.gas_escape_index = None
-            return None
+            return buffered
 
-        direction = self._clearest_escape(self.gas_mask, player_box, walls)
+        direction = (buffered if self.gas_boundary.report.get('exit_reach') is not None
+                     else self._clearest_escape(self.gas_mask, player_box, walls))
         if direction is None:
             direction = self._toward_centre(player_box, image)
         if direction is None:
@@ -1190,7 +1197,8 @@ class Play:
         self.safety_telemetry = {
             'desired': movement_vector,
             'final': movement,
-            'override_reason': ('CLASSIC_GAS_ESCAPE' if gas_vector is not None else
+            'override_reason': ('GAS_FRONT_BUFFER' if gas_vector is not None and not getattr(self,'gas_in_danger',False) else
+                'CLASSIC_GAS_ESCAPE' if gas_vector is not None else
                 'PROJECTILE_DODGE' if self.projectile_dodge.active else 'CLASSIC_GAMEPLAY'),
         }
         return movement
@@ -1247,6 +1255,15 @@ class Play:
             integral = summary[1] if summary is not None and summary[0] is self.gas_mask else None
             peak = corridor_peak(self.gas_mask, actual, v, self.gas_reach, integral=integral)
             if share >= self.gas_sensitivity or peak >= .20:
+                from gas_guard import improving_escape
+                if getattr(self,'gas_in_danger',False):
+                    reach=self.gas_reach
+                    report=getattr(getattr(self,'gas_boundary',None),'report',{})
+                    chosen=report.get('direction')
+                    if chosen and sum(a*b for a,b in zip((v[0]/length,v[1]/length),chosen))>.98:
+                        reach=max(reach,report.get('exit_reach',reach))
+                    if improving_escape(self.gas_mask,actual,v,reach,integral=integral):
+                        return True
                 self.prevented_gas_entries = getattr(self, 'prevented_gas_entries', 0) + 1
                 return False
         return True
@@ -1629,7 +1646,7 @@ class Play:
             self.projectile_dodge.reset()
         self.latency['dodge_ms'] = (time.perf_counter() - started) * 1000
         movement = self.loop(brawler, data, current_time, gas_movement)
-        self.gas_state = 'ESCAPE' if self.gas_in_danger else 'SAFE'
+        self.gas_state = 'ESCAPE' if self.gas_in_danger or getattr(getattr(self,'gas_boundary',None),'active',False) else 'SAFE'
         self.latency.update(entity_ms=self.Detect_main_info.last_inference_ms,
                             gas_ms=getattr(self.Detect_gas, 'last_inference_ms', 0.0),
                             wall_ms=(self.Detect_centered_tile_detector or self.Detect_tile_detector).last_inference_ms)
@@ -1644,6 +1661,7 @@ class Play:
                             'player': data['player'], 'enemy': data['enemy'],
                             'teammate': data['teammate'], 'wall': data['wall'], 'bush': data['bush'],
                             'gas_boxes': self.gas_boxes, 'gas_coverage': self.gas_coverage,
+                            'gas_boundary': dict(getattr(getattr(self,'gas_boundary',None),'report',{})),
                             'gas_detections': getattr(self.Detect_gas, 'last_detections', []),
                             'gas_model_confidence_threshold': self.gas_confidence,
                             'gas_observed_at': self.gas_observed_at,
