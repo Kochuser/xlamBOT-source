@@ -6,6 +6,9 @@ _HEADER = cv2.imdecode(np.frombuffer(base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAA
 _HEADER = cv2.cvtColor(_HEADER, cv2.COLOR_BGR2RGB)
 
 def is_reward_received(frame):
+    from star_power_receipt import star_power_receipt
+    if star_power_receipt(frame):
+        return True
     from spray_receipt import spray_receipt
     if spray_receipt(frame):
         return True
