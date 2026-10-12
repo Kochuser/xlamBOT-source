@@ -6,6 +6,38 @@ from gas_guard import improving_escape
 from play import Play
 
 class GasBoundaryTests(unittest.TestCase):
+    def test_live_isolated_detections_do_not_create_a_closing_front(self):
+        mask=np.zeros((720,1280),np.uint8)
+        for x1,y1,x2,y2 in [(33,520,121,581),(522,453,584,502),(86,614,118,645),(0,551,23,591)]:
+            mask[y1:y2,x1:x2]=255
+        p=GasBoundary()
+        self.assertIsNone(p.observe(mask,[605,325,655,375],41,lambda v,d:False))
+        self.assertFalse(p.active)
+        self.assertEqual(p.report['reason'],'isolated_detections')
+        self.assertGreater(np.count_nonzero(mask),0)
+
+    def test_contact_with_isolated_detection_keeps_emergency_escape(self):
+        mask=np.zeros((240,400),np.uint8);mask[80:130,100:145]=255
+        p=GasBoundary();box=[110,100,130,120]
+        v=p.observe(mask,box,20,lambda v,d:False)
+        self.assertTrue(p.active);self.assertIn('exit_reach',p.report)
+        self.assertTrue(improving_escape(mask,box,v,p.report['exit_reach']))
+
+    def test_buffer_uses_extended_front_instead_of_closer_isolated_patch(self):
+        mask=np.zeros((240,400),np.uint8);mask[:,:140]=255
+        mask[100:120,190:205]=255
+        p=GasBoundary();v=p.observe(mask,[160,100,180,120],20,lambda v,d:False)
+        self.assertGreater(v[0],.8)
+        # The final path guard still sees the isolated obstacle.
+        self.assertEqual(np.count_nonzero(mask[100:120,190:205]),300)
+
+    def test_front_qualification_releases_latch_when_only_fragments_remain(self):
+        p=GasBoundary();mask=np.zeros((240,400),np.uint8);mask[:,:140]=255
+        p.observe(mask,[160,100,180,120],20,lambda v,d:False)
+        fragment=np.zeros_like(mask);fragment[90:120,125:140]=255
+        self.assertIsNone(p.observe(fragment,[160,100,180,120],20,lambda v,d:False))
+        self.assertFalse(p.active)
+
     def test_advancing_front_triggers_before_contact_and_camera_translation_is_invariant(self):
         p=GasBoundary();mask=np.zeros((240,400),np.uint8);mask[:,:140]=255
         self.assertIsNone(p.observe(mask,[200,100,220,120],20,lambda v,d:False))
