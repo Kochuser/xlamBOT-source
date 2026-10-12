@@ -49,6 +49,10 @@ def modern_daily_reward(frame):
 
 def seasonal_announcement_dismiss_position(frame):
     if frame is None or frame.ndim!=3 or frame.shape[2]!=3:return None
+    from alternative_reward import alternative_claim_position
+    alternative_claim=alternative_claim_position(frame)
+    if alternative_claim is not None:
+        return alternative_claim
     from new_skin_receipt import new_skin_continue_position
     new_skin_continue = new_skin_continue_position(frame)
     if new_skin_continue is not None:
