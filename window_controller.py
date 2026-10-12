@@ -289,6 +289,8 @@ class WindowController:
             raise StaleFrameError('Input rejected: command from a non-owner thread')
         if decision is not None and (decision[0] != threading.get_ident() or not observations.permits(decision[1])):
             raise StaleFrameError('Input rejected: screen changed during the decision')
+        if decision is not None and not self.frame_is_fresh(decision[1].frame_time):
+            raise StaleFrameError('Input rejected: decision frame expired')
 
 
     def latest_frame_copy(self):

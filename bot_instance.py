@@ -133,6 +133,7 @@ class BotInstance:
         from runtime_observation import Observations
         self.observations = Observations()
         self.state_lock = self.observations.lock
+        self._state_classification_lock = threading.Lock()
         self.window_controller.observations = self.observations
         self.window_controller.stop_requested = self.should_stop
         self.window_controller.observe_action_frame = self.observe_action_frame
@@ -312,15 +313,45 @@ class BotInstance:
             self._handle_detected_state(state)
 
     def observe_action_frame(self, frame, frame_time):
-        if not self.window_controller.frame_is_fresh(frame_time):
-            raise StaleFrameError('Input rejected: stale menu frame')
-        from state_finder import get_action_state
-        state = get_action_state(frame)
-        self.set_latest_state(state, frame_time)
-        observation = self.observations.snapshot()
-        if observation.state != state:
-            raise StaleFrameError('Input rejected: newer screen superseded menu frame')
-        return observation
+        return self._classify_frame(frame, frame_time, for_action=True)
+
+    def _classify_frame(self, frame, frame_time, for_action=False):
+        # A decoder/recognizer and the menu owner must not perform two costly
+        # full classifiers on the same device concurrently. Never wait while
+        # retaining an old input frame: the owner retries from a new capture.
+        with self.state_lock:
+            lock = getattr(self, '_state_classification_lock', None)
+            if lock is None:
+                lock = self._state_classification_lock = threading.Lock()
+        if not lock.acquire(blocking=False):
+            if for_action:
+                raise StaleFrameError('Input deferred: device screen recognition is busy')
+            return None
+        try:
+            if not self.window_controller.frame_is_fresh(frame_time):
+                if for_action:
+                    raise StaleFrameError('Input rejected: stale menu frame')
+                return None
+            started = time.perf_counter()
+            if for_action:
+                from state_finder import get_action_state
+                state = get_action_state(frame)
+            else:
+                state = get_state(frame)
+                self.state_classification_ms = (time.perf_counter()-started)*1000
+            if for_action and not self.window_controller.frame_is_fresh(frame_time):
+                raise StaleFrameError('Input rejected: menu recognition exceeded frame age')
+            self.set_latest_state(state, frame_time)
+            if not for_action:
+                return state
+            observation = self.observations.snapshot()
+            if observation.state != state:
+                raise StaleFrameError('Input rejected: newer screen superseded menu frame')
+            from runtime_observation import Observation
+            # A newer same-screen publication cannot retime this screenshot.
+            return Observation(state, frame_time, observation.epoch)
+        finally:
+            lock.release()
 
     def _handle_detected_state(self, state):
         if state != "match":
@@ -382,11 +413,7 @@ class BotInstance:
 
                 last_checked_frame_time = frame_time
                 try:
-                    if self.window_controller.frame_is_fresh(frame_time):
-                        started = time.perf_counter()
-                        state = get_state(frame)
-                        self.state_classification_ms = (time.perf_counter() - started) * 1000
-                        self.set_latest_state(state, frame_time=frame_time)
+                    self._classify_frame(frame, frame_time)
                 except Exception as error:
                     print(f"[{self.device_label}] State checker failed: {error}")
                 self.state_checker_stop_event.wait(0.1)
