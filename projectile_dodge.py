@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 
 CAMERA_SIZE = (160, 90)
+MAX_PROJECTILE_SPEED = 1500.0
 
 
 def reduced_frame(frame):
@@ -76,15 +77,19 @@ class ProjectileDodge:
         self.heading_at = 0.0
         self.active = False
         self.camera_ok = False
+        self.camera_response = 0.0
+        self.plan = {}
 
-    def observe(self, frame, stamp, player, excluded):
+    def observe(self, frame, stamp, player, excluded, body=None):
         self.active = False
+        self.plan = {}
         if frame is None or not math.isfinite(stamp):
             self.reset()
             return
         if self.stamp is not None and stamp <= self.stamp:
             self.threats = []
             self.camera_ok = False
+            self.camera_response = 0.0
             return
         h, w = frame.shape[:2]
         if self.shape is not None and self.shape != (h, w):
@@ -95,6 +100,7 @@ class ProjectileDodge:
             return
         self.threats = []
         self.camera_ok = False
+        self.camera_response = 0.0
         self.shape = (h, w)
         small = reduced_frame(frame)
         points = components(frame, player, excluded, small=small)
@@ -111,9 +117,10 @@ class ProjectileDodge:
         valid = False
         if self.gray is not None and gray is not None and 0.02 <= dt <= 0.35:
             delta, response = cv2.phaseCorrelate(self.gray, gray)
+            self.camera_response = float(response) if math.isfinite(response) else 0.0
             shift = (delta[0] * w / CAMERA_SIZE[0], delta[1] * h / CAMERA_SIZE[1])
             valid = (
-                response >= 0.45
+                math.isfinite(response) and response >= 0.45
                 and all(math.isfinite(v) for v in shift)
                 and math.hypot(*shift) < h * 0.12
             )
@@ -131,9 +138,11 @@ class ProjectileDodge:
                 px = old["x"] + shift[0] + old["vx"] * dt
                 py = old["y"] + shift[1] + old["vy"] * dt
                 distance = math.hypot(x - px, y - py)
-                if distance <= max(18.0, 900 * dt) and 0.5 <= radius / old["r"] <= 2:
+                if (distance <= max(18.0, MAX_PROJECTILE_SPEED * dt)
+                        and 0.5 <= radius / old["r"] <= 2):
                     matches.append((distance, i, old))
             track = dict(x=x, y=y, r=radius, vx=0.0, vy=0.0, hits=1)
+            urgent_shape = False
             if matches:
                 matches.sort(key=lambda m: m[0])
                 # Crossing shots or a dense effect cluster have no reliable identity.
@@ -151,10 +160,26 @@ class ProjectileDodge:
                         / (max(speed * old_speed, 1))
                         > 0.85
                     )
-                    if 60 <= speed <= 1500 and consistent:
+                    if 60 <= speed <= MAX_PROJECTILE_SPEED and consistent:
                         track.update(vx=vx, vy=vy, hits=old["hits"] + 1)
+                        urgent_shape = .75 <= radius / old["r"] <= 1.33
             tracks.append(track)
-            if track["hits"] >= 3:
+            # A close fast shot can arrive before a third observation. Accept
+            # an urgent pair only with strong camera evidence and a projected
+            # impact on the observed body; ambiguous/static effects keep the
+            # ordinary three-observation requirement.
+            urgent = False
+            if (track["hits"] == 2 and urgent_shape and body is not None
+                    and math.isfinite(body) and body > 0 and self.camera_response >= .7):
+                dx, dy = x - player[0], y - player[1]
+                vx, vy = track["vx"], track["vy"]
+                squared = vx * vx + vy * vy
+                if squared >= 350 ** 2:
+                    arrival = -(dx * vx + dy * vy) / squared
+                    urgent = (0 < arrival <= .18 and
+                              math.hypot(dx + vx * arrival, dy + vy * arrival) <= body + radius + 6)
+            if track["hits"] >= 3 or urgent:
+                track["confirmation"] = "urgent_pair" if urgent else "stable_track"
                 self.threats.append(track)
         self.tracks = tracks
         if not valid:
@@ -180,6 +205,7 @@ class ProjectileDodge:
 
     def choose(self, base, player, body, speed, stamp, safe):
         self.active = False
+        self.plan = {}
         if (
             not self.threats
             or self.stamp is None
@@ -197,9 +223,10 @@ class ProjectileDodge:
         # The unseen player displacement during inference remains uncertain.
         body += speed * age
         baseline = self.clearance(shots, player, body, velocity)
+        self.plan = {'baseline_clearance': round(baseline, 2), 'reason': 'path_clear'}
         if baseline > 6:
             return base
-        directions = [
+        directions = [(0.0, 0.0)] + [
             (math.cos(i * math.tau / 24), math.sin(i * math.tau / 24))
             for i in range(24)
         ]
@@ -216,12 +243,13 @@ class ProjectileDodge:
         best = next(
             (
                 choice
-                for choice in sorted(choices, key=lambda c: c[0], reverse=True)
+                for choice in sorted(choices, key=lambda c: (c[1] > 0, c[0]), reverse=True)
                 if safe(choice[2])
             ),
             None,
         )
         if best is None:
+            self.plan['reason'] = 'no_admissible_improvement'
             return base
         _, clearance, direction = best
         if (
@@ -232,12 +260,15 @@ class ProjectileDodge:
             held = self.clearance(
                 shots, player, body, tuple(v * speed for v in self.heading)
             )
-            if held > baseline + 5 and held >= clearance - 4:
+            if held > baseline + 5 and held >= clearance - 4 and (held > 0 or clearance <= 0):
                 direction = self.heading
+                clearance = held
         if direction != self.heading:
             self.heading_at = stamp
         self.heading = direction
         self.active = True
+        self.plan.update(selected_clearance=round(clearance, 2),
+                         reason='hold_position' if direction == (0.0, 0.0) else 'evade')
         return tuple(v * max(norm, 1.0) for v in direction)
 
     def snapshot(self):
@@ -246,6 +277,8 @@ class ProjectileDodge:
             tracked=len(self.tracks),
             threats=len(self.threats),
             camera_ok=self.camera_ok,
+            camera_response=self.camera_response,
             observed_at=self.stamp,
+            plan=dict(self.plan),
             shots=[dict(shot) for shot in self.threats[:8]],
         )

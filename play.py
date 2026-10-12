@@ -1207,6 +1207,7 @@ class Play:
         """Only a confirmed fresh trajectory may override ordinary steering."""
         dodge = self.projectile_dodge
         dodge.active = False
+        dodge.plan = {}
         if escaping or not self.projectile_dodge_enabled or not dodge.threats:
             return movement
         if self.gas_avoidance and not self.gas_detection_ok:
@@ -1219,6 +1220,13 @@ class Play:
         speed = self.TILE_SIZE * self.window_controller.scale_factor * 2.3
 
         def safe(direction):
+            if math.hypot(*direction) < 1e-6:
+                # Halting is a candidate only on currently observed safe gas
+                # terrain. It cannot replace an active gas escape.
+                if self.gas_mask is not None:
+                    actual = self.get_actual_player_box(player_box) or player_box
+                    return self.gas_share_on_player(self.gas_mask, actual) < self.gas_sensitivity
+                return not self.gas_avoidance
             # Unit vectors would be ignored by the joystick's near-zero check.
             step = self.clamp_movement(direction)
             if self.is_path_blocked(player_box, step, data['wall'], distance=speed * .45):
@@ -1639,9 +1647,9 @@ class Play:
             return
         started = time.perf_counter()
         if self.projectile_dodge_enabled and gas_movement is None:
-            player, _ = self.get_player_hit_circle(player_box)
+            player, body = self.get_player_hit_circle(player_box)
             self.projectile_dodge.observe(frame, frame_time, player,
-                data['player'] + data['enemy'] + data['teammate'])
+                data['player'] + data['enemy'] + data['teammate'], body=body)
         else:
             self.projectile_dodge.reset()
         self.latency['dodge_ms'] = (time.perf_counter() - started) * 1000
