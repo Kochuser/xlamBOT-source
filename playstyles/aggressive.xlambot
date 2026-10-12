@@ -98,6 +98,9 @@ def detect_archetype():
     sr = float(brawler_info.get("safe_range", safe_range or 200))
     wall_ignore = brawler_info.get("ignore_walls_for_attacks", False)
 
+    if brawler_info.get("attack_pattern") == "expanding_orbit":
+        return "ORBIT_CONTROLLER"
+
     if wall_ignore:
         return "LOBS"
     if ar <= 256:
@@ -288,6 +291,15 @@ else:
                 movement = move_toward(enemy_coords)
             else:
                 movement = strafe_around(enemy_coords)
+
+        elif archetype == "ORBIT_CONTROLLER":
+            # Let the expanding shots travel; do not rush into point-blank range.
+            if enemy_distance < attack_range * 0.80:
+                movement = move_away_from(enemy_coords)
+            elif enemy_distance <= attack_range * 0.90:
+                movement = strafe_around(enemy_coords)
+            else:
+                movement = move_toward(enemy_coords)
 
         elif archetype == "SNIPER":
             min_safe = attack_range * 0.35

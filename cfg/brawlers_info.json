@@ -951,6 +951,19 @@
         "super_range": 640,
         "super_type": "damage"
     },
+    "cosmo": {
+        "actual_name": "Cosmo",
+        "rarity": "Mythic",
+        "attack_range": 576,
+        "safe_range": 460.8,
+        "super_range": 597,
+        "super_type": "damage",
+        "ignore_walls_for_attacks": false,
+        "ignore_walls_for_supers": false,
+        "hold_attack": 0,
+        "attack_pattern": "expanding_orbit",
+        "gadget_range": 469
+    },
     "wendy": {
         "attack_projectile_radius": 300,
         "attack_projectile_speed": 3500,

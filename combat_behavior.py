@@ -22,7 +22,7 @@ class CombatBehavior:
     def reset(self):
         self.target=None;self.seen=0.;self.side=1.;self.mode=None
 
-    def plan(self,level,player,enemies,allies,attack_range,safe_range,tile,radius,now,visible=None):
+    def plan(self,level,player,enemies,allies,attack_range,safe_range,tile,radius,now,visible=None,brawler=None):
         if self.mode!=level:self.reset();self.mode=level
         enemies=unique(enemies);allies=unique(allies);attack_range=max(attack_range,tile*1.5)
         visible=visible or (lambda box:True)
@@ -58,6 +58,8 @@ class CombatBehavior:
         distance=math.dist(point,player);toward=unit((point[0]-player[0],point[1]-player[1]));can_see=visible(candidate)
         melee=attack_range<=tile*3.8 or safe_range<=0
         desired=attack_range*(PREFERENCES[level] if not melee else {1:1.3,2:1.05,3:.8,4:.6,5:.4}[level])
+        if brawler == 'cosmo':
+            desired=max(desired,attack_range*.8)
         desired=max(tile*.8,desired)
         band=max(tile*.25,attack_range*.08)
         outnumbered=len(near)>len(nearby_allies)+1+TOLERANCE[level]
