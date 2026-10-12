@@ -68,16 +68,21 @@ def guided_play(frame):
     if point is None:return None
     return point
 
+def _upgrade_hand(frame, region, threshold):
+    h,w=frame.shape[:2];x1,y1,x2,y2=region
+    patch=frame[round(y1*h):round(y2*h),round(x1*w):round(x2*w)]
+    if not patch.size:return False
+    r,g,b=cv2.split(patch)
+    return ((r>210)&(g>130)&(g<230)&(b<185)).mean()>threshold
+
 def guided_upgrade(frame):
-    if frame is None:return None
-    if localized(frame,UPGRADE_TWO_TITLE,(.20,.05,.80,.18),.95) is not None:
+    if not isinstance(frame,np.ndarray) or frame.ndim!=3 or frame.shape[2]!=3 or not frame.size:return None
+    if _upgrade_hand(frame,(.65,.66,.78,.86),.12) and localized(frame,UPGRADE_TWO_TITLE,(.20,.05,.80,.18),.95) is not None:
         price=locate(frame,UPGRADE_CONFIRM_PRICE,(.60,.84,.88,.97),.95)
-        h,w=frame.shape[:2];r,g,b=cv2.split(frame[round(.66*h):round(.86*h),round(.65*w):round(.78*w)])
-        if price and ((r>210)&(g>130)&(g<230)&(b<185)).mean()>.12:return price
-    if localized(frame,SHELLY_DETAIL_NAME,(.04,.17,.28,.30),.95) is not None and localized(frame,DETAIL_LEVEL_ONE,(.69,.38,.78,.50),.95) is not None:
+        if price:return price
+    if _upgrade_hand(frame,(.76,.46,.86,.63),.20) and localized(frame,SHELLY_DETAIL_NAME,(.04,.17,.28,.30),.95) is not None and localized(frame,DETAIL_LEVEL_ONE,(.69,.38,.78,.50),.95) is not None:
         price=locate(frame,UPGRADE_PRICE,(.72,.75,.97,.90),.95)
-        h,w=frame.shape[:2];r,g,b=cv2.split(frame[round(.46*h):round(.63*h),round(.76*w):round(.86*w)])
-        if price and ((r>210)&(g>130)&(g<230)&(b<185)).mean()>.20:return price
+        if price:return price
     if localized(frame,UPGRADE_LOBBY_HINT,(.15,.43,.43,.63),.94) is not None:
         position=localized(frame,GUIDE_BRAWLERS,(0,.35,.12,.50),.94)
         if position:return position
@@ -97,8 +102,10 @@ def power_receipt(frame):
     return (localized(frame,POWER_TITLE,(.30,.17,.70,.32),.94) is not None and locate(frame,POWER_ICON,(.40,.45,.60,.65),.92) is not None) or (localized(frame,COIN_TITLE,(.30,.10,.70,.26),.94) is not None and locate(frame,COIN_ICON,(.30,.55,.50,.78),.92) is not None)
 
 def instruction_confirm(frame):
-    if frame is None or localized(frame,UPGRADE_INFO,(.20,.04,.80,.20),.94) is None:return None
-    return localized(frame,INFO_CONFIRM,(.32,.80,.65,.95),.94)
+    if frame is None:return None
+    confirm=localized(frame,INFO_CONFIRM,(.32,.80,.65,.95),.94)
+    if confirm is None or localized(frame,UPGRADE_INFO,(.20,.04,.80,.20),.94) is None:return None
+    return confirm
 
 def first_reward_guide(frame):
     if frame is None:return None
