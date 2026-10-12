@@ -718,7 +718,8 @@ class StageManager:
             return
         from star_power_receipt import star_power_receipt
         from unlocked_receipt import unlocked_receipt
-        if ((star_power_receipt(frame) or unlocked_receipt(frame)) and
+        from single_star_power_receipt import single_star_power_receipt
+        if ((star_power_receipt(frame) or unlocked_receipt(frame) or single_star_power_receipt(frame)) and
                 now - getattr(self, '_reward_received_last_tap', float('-inf')) < 1.5):
             return
         if self._should_stop() or self._should_pause():
