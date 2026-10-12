@@ -226,6 +226,13 @@ class Play:
             _,attack_range,super_range=self.get_brawler_range(self.current_brawler)
             if not choose(self.current_brawler,self.brawlers_info[self.current_brawler],self.work_mode,player,self.context['enemy_data'],attack_range,super_range,
                 lambda box:self.is_enemy_hittable(player,self.get_entity_pos(box),self.context['walls'],'super')):return False
+        if ability == 'gadget' and self.current_brawler == 'cosmo':
+            player = self.get_entity_pos(self.context['player_data'])
+            reach = self.brawlers_info['cosmo']['gadget_range'] * self.window_controller.scale_factor
+            if not any(self.get_distance(player, self.get_entity_pos(box)) <= reach and
+                       self.is_enemy_hittable(player, self.get_entity_pos(box), self.context['walls'], 'attack')
+                       for box in self.context['enemy_data']):
+                return False
         target = self.behavior_report.get('target')
         if target is not None and ability != 'super':
             _, attack_range, super_range = self.get_brawler_range(self.current_brawler)
@@ -1435,7 +1442,8 @@ class Play:
         plan = self.behavior.plan(self.work_mode,player,self.context['enemy_data'],
             self.context['teammate_data'],attack_range,safe_range,
             self.TILE_SIZE*self.window_controller.scale_factor,JOYSTICK_RADIUS,time.time(),
-            lambda box:self.is_enemy_hittable(player,self.get_entity_pos(box),self.context['walls'],'attack'))
+            lambda box:self.is_enemy_hittable(player,self.get_entity_pos(box),self.context['walls'],'attack'),
+            brawler=self.current_brawler)
         if self.work_mode == 1:
             player = self.get_player_hit_circle(self.context['player_data'])[0] or player
             tile = self.TILE_SIZE*self.window_controller.scale_factor

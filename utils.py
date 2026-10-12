@@ -428,10 +428,12 @@ def _with_brawler_aliases(info):
 
 
 def load_brawlers_info():
+    from brawler_catalog import with_built_in_brawlers
     if os.path.exists(brawlers_info_file_path):
-        return _with_brawler_aliases(json.loads(read_text_auto(brawlers_info_file_path)))
+        saved = json.loads(read_text_auto(brawlers_info_file_path))
     else:
-        return {}
+        saved = {}
+    return _with_brawler_aliases(with_built_in_brawlers(saved))
 
 
 def update_brawlers_info(brawlers_info):
