@@ -993,10 +993,12 @@ class StageManager:
             return
         from screen_evidence import daily_reward
         now = time.monotonic()
-        if now - getattr(self, '_last_daily_reward_tap', -100) < .4:
+        if now - getattr(self, '_last_daily_reward_tap', -100) < 1.5:
             return
         frame = self.window_controller.screenshot()
-        if not daily_reward(frame):
+        recognized = daily_reward(frame)
+        fresh = getattr(self.window_controller, 'frame_is_fresh', lambda: True)
+        if not recognized or not fresh() or self._should_stop() or self._should_pause():
             return
         self._last_daily_reward_tap = now
         h, w = frame.shape[:2]
