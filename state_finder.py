@@ -323,9 +323,24 @@ def connection_lost_retry_position(image):
     action = (rgb[:,:,1]>110)&(rgb[:,:,2]>110)&(rgb[:,:,0]<170)&(rgb[:,:,1]-rgb[:,:,0]>20)
     if np.count_nonzero(action)<max(8,round(width*height*.00008)):
         return None
+    # Every accepted title location must also contain the existing grey body.
+    # Bound its possible union before correlating captions; a union with fewer
+    # grey pixels than even the smallest clipped body cannot contain a match.
+    body_width, body_height = round(width*.42), round(height*.25)
+    for_body = image[top:min(height,round(height*.64)+body_height),left:min(width,round(width*.78)+body_width)]
+    # A true grey pixel (range <10, mean between 32 and 95) necessarily has
+    # every channel between 22 and 105. This wider superset is cheap to count;
+    # the exact original body predicate still runs after the caption match.
+    r,g,b = for_body[:,:,0],for_body[:,:,1],for_body[:,:,2]
+    grey_count = np.count_nonzero((r>22)&(r<105)&(g>22)&(g<105)&(b>22)&(b<105))
     for name in ('connection_lost_dialog.png', 'idle_disconnect_ru.png', 'login_failure_ru.png'):
         template = load_template(states_path+name, width, height)
         if template is None or crop.size == 0 or any(crop.shape[i]<template.shape[i] for i in (0,1)):
+            continue
+        maximum_x = left + crop.shape[1] - template.shape[1]
+        maximum_y = top + crop.shape[0] - template.shape[0]
+        minimum_body_area = min(body_width,width-maximum_x)*min(body_height,height-maximum_y)
+        if grey_count < .62*minimum_body_area:
             continue
         _, score, _, location = cv2.minMaxLoc(cv2.matchTemplate(crop,template,cv2.TM_CCOEFF_NORMED))
         if score < .94:
@@ -442,6 +457,13 @@ def get_action_state(screenshot):
     their native frames and all observations retain the original capture time.
     """
     height, width = screenshot.shape[:2]
+    if height > 360:
+        from screen_evidence import current_lobby
+        # A native lobby candidate chooses the native classifier, including all
+        # modal/tutorial priorities. Its controls can disappear on reduction,
+        # causing a full negative pass before repeating the same native scan.
+        if current_lobby(screenshot):
+            return get_in_game_state(screenshot)
     if height > 360:
         reduced = cv2.resize(screenshot, (max(1, round(width*360/height)), 360),
                              interpolation=cv2.INTER_AREA)
