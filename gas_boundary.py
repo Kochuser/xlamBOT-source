@@ -32,13 +32,22 @@ class GasBoundary:
             # The model can mark isolated bushes as gas. Only an observed
             # extended connected mass earns proactive clearance. All original
             # detections remain available for contact and final path guards.
-            count,labels,stats,_=cv2.connectedComponentsWithStats(reduced,8)
+            # Rendered clouds have gaps inside the same advancing mass. Join
+            # neighbours at most one tile apart for qualification only; never
+            # paint this dilation into the contact or swept-path detector mask.
+            join=max(1,int(math.ceil(tile/(step*2))))
+            grouped=cv2.dilate(reduced,np.ones((join*2+1,join*2+1),np.uint8))
+            count,labels,_,_=cv2.connectedComponentsWithStats(grouped,8)
             accepted=np.zeros(count,np.uint8)
             minimum=max(4*tile,min(h,w)*.45)
             for index in range(1,count):
-                _,_,width,height,area=stats[index]
-                if max(width,height)*step>=minimum and area>=width*height*.35:
+                rows,cols=np.nonzero((labels==index)&(reduced>0))
+                if not rows.size:continue
+                width=cols.max()-cols.min()+1;height=rows.max()-rows.min()+1
+                if max(width,height)*step>=minimum and rows.size>=width*height*.12:
                     accepted[index]=1
+            # Clearance includes the bounded gaps between qualified clouds:
+            # the closing area is a mass, not navigable holes between sprites.
             front=accepted[labels]
             self.front_field=(cv2.distanceTransform(1-front,cv2.DIST_L2,3)*step
                               if np.any(front) else None)
@@ -63,7 +72,7 @@ class GasBoundary:
         self.active=visible and current < margin+(tile if self.active else 0)
         self.report={'active':self.active,'clearance_px':round(current,1),'margin_px':round(margin,1),'reason':'front_nearby' if self.active else 'clear'}
         if not self.active:return None
-        if current<=radius:
+        if touching and current<=radius:
             # In existing gas, find a visible clean endpoint rather than using
             # the screen midpoint as a guessed world/map centre.
             closest=None
