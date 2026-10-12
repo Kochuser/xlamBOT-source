@@ -26,7 +26,10 @@ def modern_daily_reward(frame):
     # Legendary uses a brown/gold outline instead of the dark rare-star outline.
     red,green,blue=cv2.split(small.astype(np.float32))
     amber=(red>green*1.5)&(green>blue*1.5)&(green<130)
-    dark=(np.all(small<50,axis=2)|amber).astype(np.uint8)*255
+    # Epic's dark purple outline exceeds the neutral-dark blue threshold.
+    # Include that appearance without relaxing star geometry or pair checks.
+    purple=(green<35)&(red>15)&(red<95)&(blue<120)&(blue>red*1.1)
+    dark=(np.all(small<50,axis=2)|amber|purple).astype(np.uint8)*255
     contours,_=cv2.findContours(dark,cv2.RETR_LIST,cv2.CHAIN_APPROX_SIMPLE)
     stars=[]
     for c in contours:
