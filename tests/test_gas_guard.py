@@ -24,7 +24,7 @@ class GasGuardTests(unittest.TestCase):
         p.refresh_gas=lambda *a:None;p.gas_in_danger=True;p.gas_escape_direction=(1.,0.)
         p.gas_escape_index=0;p.gas_escape_time=1.;p.gas_escape_cooldown=.35;p.gas_lookahead=4
         p.gas_escapes=0;p.gas_danger_escapes=0;p.get_actual_player_box=lambda b:b
-        p._clearest_escape=lambda *a:(-1.,0.);p.is_path_blocked=lambda b,v,w:v[0]>0
+        p._clearest_escape=lambda *a:(-1.,0.);p.is_path_blocked=lambda b,v,w,**kw:v[0]>0
         self.assertEqual(p.avoid_gas(current_time=1.1),(-1.,0.))
     def test_visible_clouds_refresh_before_a_second_camera_decision(self):
         p=Play.__new__(Play);p.Detect_gas=object();p.gas_boxes=[[100,100,160,180]]

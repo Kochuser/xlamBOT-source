@@ -697,6 +697,7 @@ class DeviceRuntimeManager:
                 "prevented_entries": play.prevented_gas_entries,
                 "observation_age": time.time()-play.gas_observed_at if play.gas_observed_at else None,
                 "detection_ok": play.gas_detection_ok,
+                "boundary": dict(getattr(getattr(play,"gas_boundary",None),"report",{})),
             }
             data["movement"] = play.safety_telemetry
             data["world"] = play.world_state
