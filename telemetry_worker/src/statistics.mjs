@@ -1,4 +1,5 @@
 import {cleanPCName, savePCName} from './pc-name.mjs';
+import {plusUpdate,forwardPlus} from './plus-bridge.mjs';
 const validID = value => typeof value==='string' && /^[a-f0-9]{32}$/.test(value);
 const json=(body,status=200)=>Response.json(body,{status});
 export function cleanStatistics(body,now) {
@@ -56,6 +57,7 @@ function equal(a,b) {if(typeof a!=='string'||typeof b!=='string'||!b||a.length!=
 export async function telegramCommand(request,env,readBody,send=fetch) {
   if(!equal(request.headers.get('X-Telegram-Bot-Api-Secret-Token'),env.TELEGRAM_WEBHOOK_SECRET))return json({error:'unauthorized'},401);
   const update=await readBody(request),message=update.message;
+  if(Number.isSafeInteger(update.update_id)&&plusUpdate(update))return forwardPlus(update,env);
   if(!Number.isSafeInteger(update.update_id) || !message || !Number.isSafeInteger(message.chat?.id))return json({ok:true});
   const command=/^\/(online|stats|today|hour|alltime|start|help|panel|admin)(?:@([A-Za-z0-9_]+))?(?:\s|$)/.exec(message.text||'');
   if(!command || (command[2] && command[2].toLowerCase()!==(env.TELEGRAM_BOT_USERNAME||'xlambottt_bot').toLowerCase()))return json({ok:true});
@@ -74,6 +76,7 @@ export async function telegramCommand(request,env,readBody,send=fetch) {
   try {
     const text=formatOnline(await onlineByPlatform(env.DB));
     const payload={chat_id:message.chat.id,text,link_preview_options:{is_disabled:true}};
+    if(env.PLUS&&message.chat.type==='private'&&['start','help'].includes(command[1]))payload.reply_markup={inline_keyboard:[[{text:'xlamBOT Plus · Android',callback_data:'plus:home'}]]};
     if(['panel','admin'].includes(command[1])) {
       const admin=command[1]==='admin';
       if(message.chat.type!=='private')payload.text='Мини-панель доступна только в личных сообщениях @xlambottt_bot.';
