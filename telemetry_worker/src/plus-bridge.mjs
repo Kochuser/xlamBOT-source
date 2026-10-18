@@ -15,6 +15,27 @@ export async function forwardPlus(update,env){
   }catch{return json({error:'plus_unavailable'},503);}
 }
 const methods=new Set(['sendMessage','sendInvoice','answerPreCheckoutQuery','answerCallbackQuery','refundStarPayment','getStarTransactions']);
+export async function configurePlusWebhook(request,env,send=fetch){
+  if(request.method!=='POST')return json({error:'not_found'},404);
+  if(!equal(request.headers.get('X-Plus-Bridge-Secret'),env.PLUS_BRIDGE_SECRET))return json({error:'unauthorized'},401);
+  if(!env.TELEGRAM_BOT_TOKEN||!env.TELEGRAM_WEBHOOK_SECRET)return json({error:'unavailable'},503);
+  const expected='https://xlambot-error-receiver.olegu621.workers.dev/telegram';
+  const call=async(method,payload={})=>{
+    const r=await send('https://api.telegram.org/bot'+env.TELEGRAM_BOT_TOKEN+'/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),redirect:'manual',signal:AbortSignal.timeout(5000)});
+    const data=await r.json();if(!r.ok||!data.ok)throw Error('telegram_failed');return data.result;
+  };
+  try{
+    const me=await call('getMe');
+    if(me.username?.toLowerCase()!==(env.TELEGRAM_BOT_USERNAME||'xlambottt_bot').toLowerCase())return json({error:'wrong_bot'},409);
+    const info=await call('getWebhookInfo');
+    if(info.url!==expected)return json({error:'unexpected_webhook'},409);
+    const updates=Array.isArray(info.allowed_updates)&&info.allowed_updates.length?[...new Set([...info.allowed_updates,'message','callback_query','pre_checkout_query'])]:[];
+    await call('setWebhook',{url:expected,secret_token:env.TELEGRAM_WEBHOOK_SECRET,allowed_updates:updates,drop_pending_updates:false,max_connections:info.max_connections||40});
+    const verified=await call('getWebhookInfo');
+    if(verified.url!==expected||verified.allowed_updates?.length&&['message','callback_query','pre_checkout_query'].some(k=>!verified.allowed_updates.includes(k)))throw Error('verification_failed');
+    return json({ok:true,bot_username:me.username,updates:verified.allowed_updates||[],webhook_verified:true,pending_updates:verified.pending_update_count||0});
+  }catch{return json({error:'configuration_failed'},503);}
+}
 export async function telegramGateway(request,env,readBody,send=fetch){
   if(request.method!=='POST')return json({error:'not_found'},404);
   if(!equal(request.headers.get('X-Plus-Bridge-Secret'),env.PLUS_BRIDGE_SECRET))return json({error:'unauthorized'},401);
