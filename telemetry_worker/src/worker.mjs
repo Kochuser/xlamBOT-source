@@ -2,6 +2,7 @@ import {receiveStatistics,telegramCommand} from './statistics.mjs';
 import {remoteRoute} from './remote.mjs';
 import {cleanPCName, savePCName} from './pc-name.mjs';
 import {telegramGateway,configurePlusWebhook} from './plus-bridge.mjs';
+import {plusAsset} from './plus-page.mjs';
 export {PanelRelay} from './remote.mjs';
 const codes = new Set(['startup_failed','runtime_crash','runtime_halted','thread_crash','application_exception','ui_request_failed','gpu_fallback','gas_detector_failed','brawler_selection_failed','update_failed','manual_report','test_report']);
 const modules = new Set(['bot_instance','window_controller','capture_transport','play','detect','stage_manager','lobby_automation','utils','trophy_observer','trophy_reader','app','device_manager','runtime','services','training_capture','brawler_calibration','settings_schema','update_client','main','battle_memory','gas_guard','combat_behavior','ability_buttons']);
@@ -64,6 +65,11 @@ async function rate(db,key,limit,seconds=3600) {
 
 async function receive(request,env,ctx) {
   const path=new URL(request.url).pathname;
+  if(request.method==='GET'&&(path==='/plus'||path.startsWith('/plus/'))){
+    const asset=plusAsset(path);
+    if(!asset)return json({error:'not_found'},404);
+    return new Response(asset.body,{headers:{'Content-Type':asset.type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"}});
+  }
   if(path==='/internal/plus/configure-webhook')return configurePlusWebhook(request,env);
   if(path==='/internal/plus/telegram-api')return telegramGateway(request,env,readBody);
   if(path==='/miniapp'||path.startsWith('/mini/')||path.startsWith('/pc/')||path.startsWith('/v1/remote/'))return remoteRoute(request,env,readBody);
