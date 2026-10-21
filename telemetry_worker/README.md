@@ -31,7 +31,17 @@ Statistics are self-reported by consenting clients, not a count of downloads or 
 
 Daily cleanup removes error groups inactive for 30 days and Telegram update claims older than seven days. Anonymous match totals and device participation are retained for all-time statistics. Worker observability is disabled; Telegram secrets never enter the PC distribution.
 
-## Private Mini App
+## Android Plus Mini App
+
+`/plus` is the phone-first Plus storefront; `/miniapp` retains the PC remote panel. Private `/start`, `/online` and Plus-home replies include a Web App button. The storefront uses the existing signed Telegram identity exchange and HttpOnly session. `/mini/plus/*` verifies the session and Origin before forwarding the server-selected Telegram user to the Plus service. Browser-supplied user/admin IDs are overwritten.
+
+The UI shows entitlement, device, a one-time 72-hour trial, manual 50-Star renewal, payment history and support. Invoice closure in the browser never grants access: the app polls entitlement confirmed by the payment webhook. A missing or old phone blocks purchase before invoice creation. No recurring billing is requested.
+
+Online shows fresh active bots separately from installations seen in the previous day. The 150-second expiry and pause exclusion remain unchanged; expired clients are never revived to increase the count. Visible data refreshes every minute with an update time. Users without sharing or on old Android clients may not appear.
+
+Receiver SQL/auth tests, Plus payment tests and local-browser checks cover ownership, consent, invoice reuse, cancellation, forged browser payment callbacks, confirmed payment, support and unlinking. These checks do not charge real Stars.
+
+## Private PC Mini App
 
 Local Settings → Telegram creates a random single-use pairing key valid for ten minutes. PC credentials use Windows user DPAPI. Remote control is off until configured; disconnect blocks commands without stopping gameplay. Each Telegram user can link multiple PCs and sees only their linked PCs. Keep the PC and bot running.
 

@@ -1,5 +1,7 @@
 import {cleanPCName, savePCName} from './pc-name.mjs';
 import {miniPage} from './mini-page.mjs';
+import {miniappPlus} from './plus-bridge.mjs';
+import {onlineSummary} from './statistics.mjs';
 const hex=bytes=>Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const sha=async text=>hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))));
@@ -106,6 +108,16 @@ export async function remoteRoute(request,env,readBody) {
   }else auth=await session(request,env);
   if(!auth)return cors(json({error:'open_in_private_telegram'},401));
   if(request.method!=='GET'&&request.headers.get('Origin')!==url.origin&&!(scoped&&request.headers.get('Origin')==='null'))return cors(json({error:'invalid_origin'},403));
+  if(path.startsWith('/mini/plus/')){
+    const action=path.split('/').at(-1);
+    if(action==='status'&&request.method==='GET'){
+      const response=await miniappPlus(action,{},auth.user_id,env);
+      if(!response.ok)return response;
+      return json({...await response.json(),online:await onlineSummary(env.DB)});
+    }
+    if(action==='status'||request.method!=='POST')return json({error:'method_not_allowed'},405);
+    return miniappPlus(action,await readBody(request),auth.user_id,env);
+  }
   if(path==='/mini/status'&&request.method==='GET') {
     const links=(await env.DB.prepare('SELECT remote_links.installation,installation_names.name FROM remote_links LEFT JOIN installation_names USING(installation) WHERE user_id=? ORDER BY installation').bind(auth.user_id).all()).results;
     const pcs=[];for(const r of links){const grant=random();await env.DB.prepare('INSERT INTO mini_grants VALUES(?,?,?,?)').bind(await sha(grant),auth.user_id,r.installation,now+3600).run();pcs.push({id:r.installation,name:r.name||'ПК '+r.installation.slice(0,6),grant});}

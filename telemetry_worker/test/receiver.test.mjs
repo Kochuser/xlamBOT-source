@@ -61,7 +61,7 @@ test('info and unrepeated warnings are not accepted; public setup is absent',asy
   assert.equal((await worker.fetch(new Request('https://test.example/health'),env,ctx)).status,200);
 });
 
-import {statistics,formatOnline,onlineCount,onlineByPlatform,telegramCommand} from '../src/statistics.mjs';
+import {statistics,formatOnline,onlineCount,onlineByPlatform,onlineSummary,telegramCommand} from '../src/statistics.mjs';
 function metrics(overrides={}) {return {devices:[{id:'d'.repeat(32),active:true,paused:false,revision:76}],matches:[{id:'e'.repeat(32),played:Date.now()/1000,result:'victory',delta:10,source:'estimated'}],...overrides};}
 test('statistics uses authenticated ownership, deduplicates matches and expires online',async()=>{
   const a=await register();assert.equal((await call('/v1/statistics',metrics())).status,401);
@@ -113,7 +113,7 @@ test('every supported Telegram command returns only fresh active bot count',asyn
   let count=0;
   for(const command of ['online','stats','today','hour','alltime','start','help']) {
     const u={update_id:100+count,message:{chat:{id:-100123},text:'/'+command}};
-    const response=await telegramCommand(hook(u),env,r=>r.json(),async(url,o)=>{assert.equal(JSON.parse(o.body).text,'Онлайн сейчас:\nPC: 1\nAndroid: 0');count++;return Response.json({ok:true});});
+    const response=await telegramCommand(hook(u),env,r=>r.json(),async(url,o)=>{assert.equal(JSON.parse(o.body).text,formatOnline({pc:1,android:0}));count++;return Response.json({ok:true});});
     assert.equal(response.status,200);
   }
   assert.equal(count,7);
@@ -287,5 +287,31 @@ test('Telegram reports mixed active platforms without match history',async()=>{
   let text;
   const u={update_id:990,message:{chat:{id:123},text:'/online'}};
   const response=await telegramCommand(hook(u),env,r=>r.json(),async(url,o)=>{text=JSON.parse(o.body).text;return Response.json({ok:true});});
-  assert.equal(response.status,200);assert.equal(text,'Онлайн сейчас:\nPC: 1\nAndroid: 2');
+  assert.equal(response.status,200);assert.equal(text,formatOnline({pc:1,android:2}));
+});
+
+test('online separates fresh active bots from installations seen during the day',async()=>{
+  const active=await register(),stopped=await register(),expired=await register(),paused=await register();
+  for(const a of [active,stopped,expired,paused])await call('/v1/statistics',metrics({platform:'android'}),a.token);
+  await call('/v1/statistics',metrics({platform:'android',devices:[]}),stopped.token);
+  sqlite.prepare('UPDATE stats_devices SET seen=? WHERE installation=?').run(Date.now()/1000-151,expired.installation);
+  await call('/v1/statistics',metrics({platform:'android',devices:[{id:'d'.repeat(32),active:true,paused:true,revision:122}]}),paused.token);
+  const summary=await onlineSummary(env.DB);
+  assert.deepEqual(summary.active,{pc:0,android:1});assert.deepEqual(summary.installations_24h,{pc:0,android:4});assert.equal(summary.paused,1);assert.equal(summary.signal_ttl_seconds,150);
+  assert.ok(!JSON.stringify(summary).includes(active.installation));
+});
+
+test('Plus miniapp routes require authenticated session, correct origin and bind user server-side',async()=>{
+  env.TELEGRAM_BOT_TOKEN='test-token';env.PLUS_BRIDGE_SECRET='bridge';
+  const calls=[];env.PLUS={async fetch(url,request){calls.push({url,body:JSON.parse(request.body)});return Response.json({ok:true});}};
+  const blocked=await worker.fetch(new Request('https://test.example/mini/plus/status'),env,ctx);assert.equal(blocked.status,401);assert.equal(calls.length,0);
+  const session='c'.repeat(64),hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(session));
+  const encoded=Buffer.from(hash).toString('hex');sqlite.prepare('INSERT INTO mini_sessions VALUES(?,?,?)').run(encoded,'123',Date.now()/1000+3600);
+  const headers={Cookie:'xlam_mini='+session,Origin:'https://test.example'};
+  assert.equal((await call('/mini/plus/invoice',{user_id:999},null,headers)).status,200);
+  assert.equal(calls.at(-1).body.user_id,123);
+  assert.equal((await call('/mini/plus/beta',{},null,{...headers,Origin:'https://evil.example'})).status,403);
+  assert.equal(calls.length,1);
+  const status=await worker.fetch(new Request('https://test.example/mini/plus/status',{headers}),env,ctx);assert.equal(status.status,200);assert.deepEqual((await status.json()).online.active,{pc:0,android:0});
+  const asset=await worker.fetch(new Request('https://test.example/plus'),env,ctx);assert.equal(asset.status,200);assert.ok(asset.headers.get('Content-Security-Policy').includes("connect-src 'self'"));
 });

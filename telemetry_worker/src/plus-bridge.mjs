@@ -14,7 +14,17 @@ export async function forwardPlus(update,env){
     return json({ok:r.ok},r.ok?200:503);
   }catch{return json({error:'plus_unavailable'},503);}
 }
-const methods=new Set(['sendMessage','sendInvoice','answerPreCheckoutQuery','answerCallbackQuery','refundStarPayment','getStarTransactions']);
+const methods=new Set(['sendMessage','sendInvoice','createInvoiceLink','answerPreCheckoutQuery','answerCallbackQuery','refundStarPayment','getStarTransactions']);
+
+export async function miniappPlus(action,body,user,env){
+  if(!['status','terms','beta','invoice','unlink','support'].includes(action))return json({error:'not_found'},404);
+  if(!env.PLUS||!env.PLUS_BRIDGE_SECRET)return json({error:'plus_unavailable'},503);
+  try{
+    const response=await env.PLUS.fetch('https://plus.internal/internal/miniapp/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-Plus-Bridge-Secret':env.PLUS_BRIDGE_SECRET},body:JSON.stringify({...body,user_id:Number(user),admin_id:env.ADMIN_TELEGRAM_USER_ID||''}),signal:AbortSignal.timeout(8500)});
+    const data=await response.json();
+    return json(data,response.status);
+  }catch{return json({error:'plus_unavailable'},503);}
+}
 export async function configurePlusWebhook(request,env,send=fetch){
   if(request.method!=='POST')return json({error:'not_found'},404);
   if(!equal(request.headers.get('X-Plus-Bridge-Secret'),env.PLUS_BRIDGE_SECRET))return json({error:'unauthorized'},401);

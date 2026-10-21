@@ -52,7 +52,13 @@ export async function onlineByPlatform(db,now=Date.now()/1000) {
   const row=await db.prepare(`SELECT COALESCE(SUM(CASE WHEN COALESCE(p.platform,'pc')='pc' THEN 1 ELSE 0 END),0) pc,COALESCE(SUM(CASE WHEN p.platform='android' THEN 1 ELSE 0 END),0) android FROM stats_devices d LEFT JOIN installation_platforms p USING(installation) WHERE d.active=1 AND d.paused=0 AND d.seen>=?`).bind(now-150).first();
   return {pc:Number(row.pc),android:Number(row.android)};
 }
-export const formatOnline=({pc,android})=>`Онлайн сейчас:\nPC: ${pc.toLocaleString('ru-RU')}\nAndroid: ${android.toLocaleString('ru-RU')}`;
+export async function onlineSummary(db,now=Date.now()/1000){
+  const active=await onlineByPlatform(db,now);
+  const recent=await db.prepare(`SELECT COUNT(DISTINCT CASE WHEN COALESCE(p.platform,'pc')='pc' THEN d.installation END) pc,COUNT(DISTINCT CASE WHEN p.platform='android' THEN d.installation END) android FROM stats_devices d LEFT JOIN installation_platforms p USING(installation) WHERE d.seen>=?`).bind(now-86400).first();
+  const paused=await db.prepare('SELECT COUNT(*) bots FROM stats_devices WHERE paused=1 AND seen>=?').bind(now-150).first();
+  return {active,installations_24h:{pc:Number(recent.pc),android:Number(recent.android)},paused:Number(paused.bots),server_time:now,signal_ttl_seconds:150};
+}
+export const formatOnline=({pc,android})=>`Онлайн сейчас:\nPC: ${pc.toLocaleString('ru-RU')}\nAndroid: ${android.toLocaleString('ru-RU')}\n\nЗапущенные боты со свежим сигналом. Паузы не учитываются.`;
 function equal(a,b) {if(typeof a!=='string'||typeof b!=='string'||!b||a.length!==b.length)return false;let d=0;for(let i=0;i<a.length;i++)d|=a.charCodeAt(i)^b.charCodeAt(i);return d===0;}
 export async function telegramCommand(request,env,readBody,send=fetch) {
   if(!equal(request.headers.get('X-Telegram-Bot-Api-Secret-Token'),env.TELEGRAM_WEBHOOK_SECRET))return json({error:'unauthorized'},401);
@@ -77,6 +83,7 @@ export async function telegramCommand(request,env,readBody,send=fetch) {
     const text=formatOnline(await onlineByPlatform(env.DB));
     const payload={chat_id:message.chat.id,text,link_preview_options:{is_disabled:true}};
     if(env.PLUS&&message.chat.type==='private'&&['start','help'].includes(command[1]))payload.reply_markup={inline_keyboard:[[{text:'xlamBOT Plus · Android',callback_data:'plus:home'}]]};
+    if(env.PLUS&&message.chat.type==='private')payload.reply_markup={inline_keyboard:[[{text:'Открыть xlamBOT · Plus',web_app:{url:new URL('/plus',request.url).href}}]]};
     if(['panel','admin'].includes(command[1])) {
       const admin=command[1]==='admin';
       if(message.chat.type!=='private')payload.text='Мини-панель доступна только в личных сообщениях @xlambottt_bot.';
