@@ -31,21 +31,21 @@ function text(tag,value,className){const e=document.createElement(tag);e.textCon
 function render(){
  const active=state.account.plan==='plus',ready=!!state.device;
  $('app').hidden=false;$('navigation').hidden=false;$('outside').hidden=true;
- $('plan-badge').textContent=active?(state.account.promo?'PLUS / АКЦИЯ':state.account.beta?'ПРОБНЫЙ PLUS':'PLUS АКТИВЕН'):'FREE';
+ $('plan-badge').textContent=state.account.vip?'VIP / БЕЗЛИМИТ':active?(state.account.promo?'PLUS / АКЦИЯ':state.account.beta?'ПРОБНЫЙ PLUS':'PLUS АКТИВЕН'):'FREE';
  $('plan-description').textContent=active?'Твои дополнительные функции доступны в Android-приложении.':'Базовые функции бесплатны. Попробуй Plus в своём темпе.';
- $('plan-until').textContent=active?'До '+date(state.account.until):'Free · без ограничения срока';
+ $('plan-until').textContent=state.account.vip?'Plus бессрочно · продление не нужно':active?'До '+date(state.account.until):'Free · без ограничения срока';
  $('price').textContent=String(state.price);
- $('promo').hidden=!state.promo_active;
+ $('promo').hidden=state.account.vip||!state.promo_active;
  $('promo-copy').textContent='До '+new Intl.DateTimeFormat('ru-RU',{timeZone:'Europe/Moscow',dateStyle:'short',timeStyle:'short'}).format(new Date(state.promo_until*1000))+' МСК. Затем — покупка за 50 Stars на 30 дней и разовые 3 часа для новых подключений.';
- $('buy').textContent=active?'Продлить · '+state.price+' ★':'Оформить · '+state.price+' ★';
- $('buy').disabled=busy||!state.sales_enabled;
- $('trial-hint').textContent=state.promo_active?'Пока действует общая акция, личные 3 часа не расходуются.':state.beta_used?'Пробный доступ уже активировался на этом аккаунте.':active?'У тебя уже есть Plus. Пробный доступ пока не расходуется.':'Срок начнётся автоматически при первом подключении Plus после акции. Один раз на Telegram-аккаунт.';
+ $('buy').textContent=state.account.vip?'VIP · покупать не нужно':active?'Продлить · '+state.price+' ★':'Оформить · '+state.price+' ★';
+ $('buy').disabled=busy||state.account.vip||!state.sales_enabled;
+ $('trial-hint').textContent=state.account.vip?'Все функции Plus доступны бессрочно. Пробный срок не нужен.':state.promo_active?'Пока действует общая акция, личные 3 часа не расходуются.':state.beta_used?'Пробный доступ уже активировался на этом аккаунте.':active?'У тебя уже есть Plus. Пробный доступ пока не расходуется.':'Срок начнётся автоматически при первом подключении Plus после акции. Один раз на Telegram-аккаунт.';
  $('beta').disabled=busy||state.promo_active||state.beta_used||active||!state.beta_enabled;
  $('beta').textContent=state.promo_active?'Сейчас действует общая акция':state.beta_used?'Пробный доступ использован':!state.beta_enabled?'Бета временно закрыта':'Подключить пробные 3 часа ↗';
  const label=ready?state.device.label:state.linked?'Обнови APK и подтверди доступ':'Подключить телефон';
  $('device-label').textContent=label;$('account-device').textContent=label;
  $('username').textContent=state.account.username?'@'+state.account.username:'Твой Telegram-аккаунт';
- $('account-plan').textContent=active?'Plus до '+date(state.account.until):'Free · базовые возможности';
+ $('account-plan').textContent=state.account.vip?'VIP · бессрочный Plus':active?'Plus до '+date(state.account.until):'Free · базовые возможности';
  $('unlink').hidden=!state.linked;$('unlink').disabled=busy;
  $('features').replaceChildren(...state.features.map((feature,index)=>{const card=text('article','','feature'),copy=descriptions[feature.id]||[feature.name,'Доступно в текущем Android-приложении.'];card.append(text('span',String(index+1).padStart(2,'0')+' / PLUS','feature-number'),text('h2',copy[0]),text('p',copy[1]));return card;}));
  $('payments').replaceChildren(...(state.history.length?state.history.map(p=>{const row=text('div','','payment');row.append(text('p',date(p.paid_at)),text('b',p.amount+' '+(p.currency==='XTR'?'★':p.currency)),text('small','Заказ plus_'+p.order_id+' · '+(p.refunded?'Возвращено':p.accepted?'Оплачено':'Проверка / возврат'),'small'));return row;}):[text('p','Покупок пока нет.')]));
