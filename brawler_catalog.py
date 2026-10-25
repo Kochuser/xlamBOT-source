@@ -4,9 +4,24 @@ Cosmo's kit: Supercell release notes, August 2026.
 Ranges: 69.230 skills.csv, AttractorWeapon (27), AttractorUlti (28),
 both Attractor gadgets (22); one tile is three game units / 64 reference pixels.
 The 80% spacing floor is a bot policy, not an in-game damage threshold.
+
+Vince's kit: the same official release notes. In 69.230 skills.csv he is
+Stacker: Weapon range 25 and Ulti range 27, including all moth tiers.
+His safe spacing is a bot policy; no caterpillar/debuff detection is implied.
 """
 
 BUILT_IN_BRAWLERS = {
+    'vince': {
+        'actual_name': 'Vince',
+        'rarity': 'Mythic',
+        'attack_range': 533,
+        'safe_range': 328,
+        'super_range': 576,
+        'super_type': 'damage',
+        'ignore_walls_for_attacks': False,
+        'ignore_walls_for_supers': False,
+        'hold_attack': 0,
+    },
     'cosmo': {
         'actual_name': 'Cosmo',
         'rarity': 'Mythic',

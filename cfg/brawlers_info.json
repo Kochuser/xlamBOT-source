@@ -951,6 +951,17 @@
         "super_range": 640,
         "super_type": "damage"
     },
+    "vince": {
+        "actual_name": "Vince",
+        "rarity": "Mythic",
+        "attack_range": 533,
+        "safe_range": 328,
+        "super_range": 576,
+        "super_type": "damage",
+        "ignore_walls_for_attacks": false,
+        "ignore_walls_for_supers": false,
+        "hold_attack": 0
+    },
     "cosmo": {
         "actual_name": "Cosmo",
         "rarity": "Mythic",
