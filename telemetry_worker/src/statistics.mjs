@@ -1,5 +1,6 @@
 import {cleanPCName, savePCName} from './pc-name.mjs';
 import {plusUpdate,forwardPlus} from './plus-bridge.mjs';
+import {gateCommunity} from './community.mjs';
 const validID = value => typeof value==='string' && /^[a-f0-9]{32}$/.test(value);
 const json=(body,status=200)=>Response.json(body,{status});
 export function cleanStatistics(body,now) {
@@ -63,6 +64,12 @@ function equal(a,b) {if(typeof a!=='string'||typeof b!=='string'||!b||a.length!=
 export async function telegramCommand(request,env,readBody,send=fetch) {
   if(!equal(request.headers.get('X-Telegram-Bot-Api-Secret-Token'),env.TELEGRAM_WEBHOOK_SECRET))return json({error:'unauthorized'},401);
   const update=await readBody(request),message=update.message;
+  const callback=update.callback_query,actor=callback?.from||message?.from,chat=callback?.message?.chat||message?.chat;
+  const financial=!!(update.pre_checkout_query||message?.successful_payment||message?.refunded_payment||/^\/(?:paysupport|terms|plus_refund|plus_support|plus_history)(?:@[A-Za-z0-9_]+)?(?:\s|$)/.test(message?.text||'')||/^plus:(?:support|terms|history|unlink(?:_confirm)?)$/.test(callback?.data||''));
+  if(Number.isSafeInteger(update.update_id)&&actor&&chat?.type==='private'&&String(chat.id)===String(actor.id)&&!financial){
+    try{const gate=await gateCommunity(env,actor,{text:message?.text||'',updateId:update.update_id,callbackId:callback?.id||null,force:callback?.data==='plus:check_membership'});if(!gate.allowed)return json({ok:true});}
+    catch{return json({error:'community_unavailable'},503);}
+  }
   if(Number.isSafeInteger(update.update_id)&&plusUpdate(update))return forwardPlus(update,env);
   if(!Number.isSafeInteger(update.update_id) || !message || !Number.isSafeInteger(message.chat?.id))return json({ok:true});
   const command=/^\/(online|stats|today|hour|alltime|start|help|panel|admin)(?:@([A-Za-z0-9_]+))?(?:\s|$)/.exec(message.text||'');

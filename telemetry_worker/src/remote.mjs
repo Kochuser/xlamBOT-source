@@ -2,6 +2,7 @@ import {cleanPCName, savePCName} from './pc-name.mjs';
 import {miniPage} from './mini-page.mjs';
 import {miniappPlus} from './plus-bridge.mjs';
 import {onlineSummary} from './statistics.mjs';
+import {miniCommunity} from './community.mjs';
 const hex=bytes=>Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
 const random=()=>hex(crypto.getRandomValues(new Uint8Array(32)));
 const sha=async text=>hex(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))));
@@ -107,6 +108,7 @@ export async function remoteRoute(request,env,readBody) {
     auth=await env.DB.prepare('SELECT user_id FROM mini_grants WHERE token=? AND installation=? AND expires>?').bind(await sha(grant),scoped[1],now).first();
   }else auth=await session(request,env);
   if(!auth)return cors(json({error:'open_in_private_telegram'},401));
+  if(!path.endsWith('/support')&&!path.endsWith('/terms')){const blocked=await miniCommunity(env,auth.user_id);if(blocked)return cors(blocked);}
   if(request.method!=='GET'&&request.headers.get('Origin')!==url.origin&&!(scoped&&request.headers.get('Origin')==='null'))return cors(json({error:'invalid_origin'},403));
   if(path.startsWith('/mini/plus/')){
     const action=path.split('/').at(-1);

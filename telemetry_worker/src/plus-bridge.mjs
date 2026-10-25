@@ -14,7 +14,7 @@ export async function forwardPlus(update,env){
     return json({ok:r.ok},r.ok?200:503);
   }catch{return json({error:'plus_unavailable'},503);}
 }
-const methods=new Set(['sendMessage','sendInvoice','createInvoiceLink','answerPreCheckoutQuery','answerCallbackQuery','refundStarPayment','getStarTransactions']);
+const methods=new Set(['sendMessage','sendInvoice','createInvoiceLink','answerPreCheckoutQuery','answerCallbackQuery','refundStarPayment','getStarTransactions','getChatMember']);
 
 export async function miniappPlus(action,body,user,env){
   if(!['status','terms','beta','invoice','unlink','support'].includes(action))return json({error:'not_found'},404);

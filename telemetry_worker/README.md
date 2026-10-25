@@ -35,7 +35,11 @@ Daily cleanup removes error groups inactive for 30 days and Telegram update clai
 
 `/plus` is the phone-first Plus storefront; `/miniapp` retains the PC remote panel. Private `/start`, `/online` and Plus-home replies include a Web App button. The storefront uses the existing signed Telegram identity exchange and HttpOnly session. `/mini/plus/*` verifies the session and Origin before forwarding the server-selected Telegram user to the Plus service. Browser-supplied user/admin IDs are overwritten.
 
-The UI shows entitlement, device, a one-time 72-hour trial, manual 50-Star renewal, payment history and support. Invoice closure in the browser never grants access: the app polls entitlement confirmed by the payment webhook. A missing or old phone blocks purchase before invoice creation. No recurring billing is requested.
+The 1.2 UI shows entitlement, device, manual 50-Star / 30-day renewal, referrals, payment history and support. Trials are removed at the 1.2 cutover; existing paid, VIP and referral access is preserved. Invoice closure in the browser never grants access: the app polls entitlement confirmed by the payment webhook. A missing or old phone blocks purchase before invoice creation. No recurring billing is requested.
+
+Apply receiver migration `0006_event_details.sql` and Plus migration `0003_referrals.sql` before the 1.2 workers. Deploy this receiver first with the community flag disabled, deploy Plus with the new policy, then enable `PLUS_COMMUNITY_ENABLED=true` here. Preserve live secrets, bindings and sales settings. Back up both D1 databases before applying migrations.
+
+Telegram and Mini App access requires channel membership when the community flag is enabled. The verified bot must be an administrator of @xlamModz. Authenticated `getChatMember` checks use the private bridge and a short cache; financial support, checkout and payment/refund events remain available independently. Android gameplay is never gated by channel membership. New users entering through a referral link and confirming membership count once; every five qualified users adds ten days to the inviter's Plus. Reward delivery uses the existing durable outbox. Historical unregistered visitors cannot be reconstructed retroactively.
 
 Online shows fresh active bots separately from installations seen in the previous day. The 150-second expiry and pause exclusion remain unchanged; expired clients are never revived to increase the count. Visible data refreshes every minute with an update time. Users without sharing or on old Android clients may not appear.
 
