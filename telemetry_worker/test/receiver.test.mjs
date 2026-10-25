@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import worker,{cleanEvent,deliver} from '../src/worker.mjs';
+import {cleanDiagnostics} from '../src/event-details.mjs';
 
 // Execute production SQL against SQLite, not canned responses.
 let sqlite,env,pending;
@@ -10,7 +11,7 @@ function dbAdapter(sqlite) {
   const statement=(sql,args=[])=>({bind(...values){return statement(sql,values);},async first(){return sqlite.prepare(sql).get(...args) || null;},async all(){return {results:sqlite.prepare(sql).all(...args)};},async run(){return {meta:{changes:Number(sqlite.prepare(sql).run(...args).changes)}};}});
   return {prepare:statement,async batch(items){sqlite.exec('BEGIN');try{const results=[];for(const item of items)results.push(await item.run());sqlite.exec('COMMIT');return results;}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
 }
-beforeEach(()=>{sqlite=new DatabaseSync(':memory:');sqlite.exec(readFileSync(new URL('../migrations/0001.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('../migrations/0002_statistics.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('../migrations/0003_remote_panel.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('../migrations/0004_pc_names.sql',import.meta.url),'utf8'));sqlite.exec(readFileSync(new URL('../migrations/0005_installation_platforms.sql',import.meta.url),'utf8'));env={DB:dbAdapter(sqlite)};pending=[];});
+beforeEach(()=>{sqlite=new DatabaseSync(':memory:');sqlite.exec('PRAGMA foreign_keys=ON');for(const name of ['0001.sql','0002_statistics.sql','0003_remote_panel.sql','0004_pc_names.sql','0005_installation_platforms.sql','0006_event_details.sql'])sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));env={DB:dbAdapter(sqlite)};pending=[];});
 afterEach(()=>sqlite.close());
 const ctx={waitUntil(p){pending.push(p);}};
 async function call(path,data,token,extra={}) {
@@ -21,6 +22,34 @@ async function call(path,data,token,extra={}) {
 async function register(){const r=await call('/v1/register',{});assert.equal(r.status,200);return r.json();}
 function event(owner,overrides={}) {const now=Date.now()/1000;return {installation:owner.installation,id:'a'.repeat(32),code:'runtime_crash',level:'critical',stage:'runtime',app_version:'0.8.20',revision:73,exception_type:'RuntimeError',count:1,first_seen:now,last_seen:now,trace:[{module:'play',function:'tick',line:12}],...overrides};}
 function telegram(){env.TELEGRAM_BOT_TOKEN='FAKE_TEST_TOKEN';env.TELEGRAM_CHAT_ID='TEST_CHAT';}
+
+test('event occurrence time remains distinct from server receive time; replay never moves it backwards',async()=>{
+ const owner=await register(),first=Date.now()/1000-5*86400,last=first+100;
+ const report=event(owner,{first_seen:first,last_seen:last,diagnostics:{capture:'accessibility',state:'match',heap_mb:120,token:'PRIVATE'}});
+ assert.equal((await call('/v1/events',report,owner.token)).status,202);
+ const a=sqlite.prepare('SELECT * FROM event_details').get();assert.equal(a.first_seen,first);assert.equal(a.last_seen,last);assert.ok(a.received_at>last+4*86400);assert.ok(!a.diagnostics.includes('PRIVATE'));
+ assert.equal((await call('/v1/events',{...report,count:3,last_seen:last+50},owner.token)).status,202);
+ assert.equal((await call('/v1/events',report,owner.token)).status,202);
+ const b=sqlite.prepare('SELECT * FROM event_details').get();assert.equal(b.last_seen,last+50);assert.equal(b.first_received,a.first_received);assert.equal(sqlite.prepare('SELECT count FROM events').get().count,3);
+ assert.equal((await call('/v1/events',{...report,code:'thread_crash'},owner.token)).status,409);
+ assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM event_details').get().n,1);
+});
+test('diagnostics reject arbitrary text, bad ranges and unbounded metadata',()=>{
+ assert.deepEqual(cleanDiagnostics({token:'SECRET',state:'ACCOUNT_NAME',capture:'PRIVATE_PATH',heap_mb:-3,display_width:100000,sdk:'34'}),{});
+ assert.deepEqual(cleanDiagnostics({state:'match',capture:'projection',sdk:34,frame_age_ms:12}),{state:'match',capture:'projection',frame_age_ms:12,sdk:34});
+});
+
+test('Telegram community gate is private-only, unavailable checks fail closed and financial help stays available',async()=>{
+ env.TELEGRAM_WEBHOOK_SECRET='hook';env.PLUS_BRIDGE_SECRET='bridge';env.PLUS_COMMUNITY_ENABLED='true';let allowed=false,available=true;
+ const calls=[];env.PLUS={async fetch(url,request){calls.push(url);if(!available)return Response.json({error:'failed'},{status:503});return Response.json(url.endsWith('/gate')?{allowed,channel:'@xlamModz'}:{ok:true});}};
+ const req=(id,text)=>new Request('https://test.example/telegram',{method:'POST',headers:{'Content-Type':'application/json','X-Telegram-Bot-Api-Secret-Token':'hook'},body:JSON.stringify({update_id:id,message:{from:{id:123,is_bot:false},chat:{id:123,type:'private'},text}})});
+ assert.equal((await worker.fetch(req(4101,'/plus'),env,ctx)).status,200);assert.equal(calls.length,1);assert.ok(calls[0].endsWith('/gate'));
+ available=false;assert.equal((await worker.fetch(req(4102,'/plus'),env,ctx)).status,503);
+ available=true;calls.length=0;assert.equal((await worker.fetch(req(4103,'/paysupport help'),env,ctx)).status,200);assert.equal(calls.length,1);assert.ok(calls[0].endsWith('/internal/telegram'));
+ calls.length=0;assert.equal((await worker.fetch(req(4104,'/paysupport@xlambottt_bot help'),env,ctx)).status,200);assert.ok(calls[0].endsWith('/internal/telegram'));
+ assert.equal((await call('/health',{},null)).status,404);
+ const owner=await register();assert.equal((await call('/v1/events',event(owner),owner.token)).status,202);
+});
 test('sanitizes private data, rejects malformed counts and forbidden modules',async()=>{
   const owner=await register(),clean=await cleanEvent(event(owner,{message:'password',trace:[{module:'private',line:1,function:'secret'}]}));
   assert.equal(clean.message,undefined);assert.deepEqual(clean.trace,[]);
@@ -53,7 +82,7 @@ test('retention removes idle groups, preserves active groups and their counters'
   const a=await register();await call('/v1/events',event(a),a.token);
   const b=await register();await call('/v1/events',event(b,{id:'b'.repeat(32),code:'gpu_fallback'}),b.token);
   sqlite.prepare('UPDATE events SET seen=? WHERE id=?').run(Date.now()/1000-31*86400,'a'.repeat(32));
-  await worker.scheduled({scheduledTime:0},env,ctx);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM events').get().n,1);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM groups').get().n,1);
+  await worker.scheduled({scheduledTime:0},env,ctx);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM events').get().n,1);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM groups').get().n,1);assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM event_details').get().n,1);
 });
 test('info and unrepeated warnings are not accepted; public setup is absent',async()=>{
   const a=await register();for(const level of ['info','warning'])assert.equal((await call('/v1/events',event(a,{level}),a.token)).status,400);

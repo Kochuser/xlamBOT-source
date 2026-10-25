@@ -3,7 +3,12 @@
   "main": "src/worker.mjs",
   "compatibility_date": "2026-10-08",
   "workers_dev": true,
-  "services": [{"binding":"PLUS","service":"xlambot-plus"}],
+  "services": [
+    {
+      "binding": "PLUS",
+      "service": "xlambot-plus"
+    }
+  ],
   "observability": {
     "enabled": false
   },
@@ -35,5 +40,8 @@
         "PanelRelay"
       ]
     }
-  ]
+  ],
+  "vars": {
+    "PLUS_COMMUNITY_ENABLED": "true"
+  }
 }

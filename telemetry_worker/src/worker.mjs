@@ -3,6 +3,7 @@ import {remoteRoute} from './remote.mjs';
 import {cleanPCName, savePCName} from './pc-name.mjs';
 import {telegramGateway,configurePlusWebhook} from './plus-bridge.mjs';
 import {plusAsset} from './plus-page.mjs';
+import {cleanDiagnostics,saveEventDetails} from './event-details.mjs';
 export {PanelRelay} from './remote.mjs';
 const codes = new Set(['startup_failed','runtime_crash','runtime_halted','thread_crash','application_exception','ui_request_failed','gpu_fallback','gas_detector_failed','brawler_selection_failed','update_failed','manual_report','test_report']);
 const modules = new Set(['bot_instance','window_controller','capture_transport','play','detect','stage_manager','lobby_automation','utils','trophy_observer','trophy_reader','app','device_manager','runtime','services','training_capture','brawler_calibration','settings_schema','update_client','main','battle_memory','gas_guard','combat_behavior','ability_buttons']);
@@ -23,6 +24,7 @@ export async function cleanEvent(event) {
   }
   out.device=typeof event.device==='string' && /^[a-f0-9]{12}$/.test(event.device)?event.device:'';
   out.pc_name=cleanPCName(event.pc_name);
+  out.diagnostics=cleanDiagnostics(event.diagnostics);
   out.app_version=identifier(event.app_version);
   out.exception_type=identifier(event.exception_type);
   out.revision=Number.isInteger(event.revision) && event.revision>=0 && event.revision<=10000000?event.revision:0;
@@ -111,6 +113,7 @@ async function receive(request,env,ctx) {
     return json({error:old?'conflicting_report':'capacity'},old?409:429);
   }
   await env.DB.prepare('INSERT OR IGNORE INTO groups(fingerprint) VALUES(?)').bind(item.fingerprint).run();
+  await saveEventDetails(env,item,now);
   ctx.waitUntil(deliver(env).catch(()=>{}));
   return json({accepted:item.id},202);
 }
@@ -126,7 +129,9 @@ export async function deliver(env,send=fetch) {
     if(!row) return false;
     const example=await env.DB.prepare('SELECT events.*,installation_names.name AS pc_name FROM events LEFT JOIN installation_names USING(installation) WHERE fingerprint=? LIMIT 1').bind(row.fingerprint).first();
     row.users=(await env.DB.prepare('SELECT COUNT(DISTINCT installation) users FROM events WHERE fingerprint=?').bind(row.fingerprint).first()).users;
-    const text=`xlamBOT · ${example.level.toUpperCase()}\n${example.code} · ${example.stage}\nVersion ${example.version} / r${example.revision}\nPC: ${example.pc_name || example.installation.slice(0,6)}\nReports: ${row.total} · installations: ${row.users}\n${example.exception}\n${example.trace}`.slice(0,4000);
+    const details=await env.DB.prepare('SELECT * FROM event_details WHERE installation=? AND id=?').bind(example.installation,example.id).first();
+    const time=value=>new Date(value*1000).toISOString();
+    const text=`xlamBOT · ${example.level.toUpperCase()}\n${example.code} · ${example.stage}\nVersion ${example.version} / r${example.revision}\nDevice: ${example.pc_name || example.installation.slice(0,6)}\nCumulative reports: ${row.total} · installations: ${row.users}\n${example.exception}\n${example.trace}${details?'\nEvent UTC: '+time(details.first_seen)+' → '+time(details.last_seen)+'\nReceived UTC: '+time(details.received_at)+'\n'+details.diagnostics:''}`.slice(0,4000);
     try {
       const response=await send('https://api.telegram.org/bot'+env.ERROR_TELEGRAM_BOT_TOKEN+'/sendMessage',{
         method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:env.ERROR_TELEGRAM_CHAT_ID,text,link_preview_options:{is_disabled:true}}),
