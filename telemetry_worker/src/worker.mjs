@@ -2,6 +2,7 @@ import {receiveStatistics,telegramCommand} from './statistics.mjs';
 import {remoteRoute} from './remote.mjs';
 import {cleanPCName, savePCName} from './pc-name.mjs';
 import {telegramGateway,configurePlusWebhook} from './plus-bridge.mjs';
+import {channelAdmin} from './channel-admin.mjs';
 import {plusAsset} from './plus-page.mjs';
 import {cleanDiagnostics,saveEventDetails} from './event-details.mjs';
 export {PanelRelay} from './remote.mjs';
@@ -73,6 +74,7 @@ async function receive(request,env,ctx) {
     return new Response(asset.body,{headers:{'Content-Type':asset.type,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"}});
   }
   if(path==='/internal/plus/configure-webhook')return configurePlusWebhook(request,env);
+  if(path==='/internal/channel-admin')return channelAdmin(request,env,readBody);
   if(path==='/internal/plus/telegram-api')return telegramGateway(request,env,readBody);
   if(path==='/miniapp'||path.startsWith('/mini/')||path.startsWith('/pc/')||path.startsWith('/v1/remote/'))return remoteRoute(request,env,readBody);
   if(path==='/health' && request.method==='GET') return json({ok:true,service:'xlambot-error-receiver'});
