@@ -115,3 +115,31 @@ class DetailTests(unittest.TestCase):
   f=self.inactive_heart_screen()
   with patch('disconnect_dialog.idle_disconnect_reload_position',return_value=(200,300)):
    self.assertEqual(state_finder.get_action_state(f),'idle_disconnect')
+
+ def filled_heart_screen(self,w=1280,h=720,missing=None):
+  f=screen(w,h,missing=missing or 'HANGER')
+  f[round(h*.70):round(h*.84),round(w*.19):round(w*.29)]=(10,120,240)
+  g=d._glyph(d.HEART_FILLED,h);x,y=round(w*.384),round(h*.872)
+  f[y:y+g.shape[0],x:x+g.shape[1]]=g
+  return f
+
+ def test_filled_favourite_does_not_turn_detail_into_shop(self):
+  # The real current pink favourite icon does not match either older heart
+  # variant. With this control present, Select must remain reachable.
+  for w,h in [(640,360),(960,540),(1280,720),(1920,1080),(1920,864)]:
+   with self.subTest(size=(w,h)):
+    f=self.filled_heart_screen(w,h)
+    self.assertEqual(state_finder.get_action_state(f),'brawler_detail')
+    self.assertIsNotNone(d.detail_select_position(f))
+
+ def test_filled_favourite_still_requires_independent_controls(self):
+  for missing in ['HOME','PROFILE','CHAT','SELECT']:
+   with self.subTest(missing=missing):
+    self.assertIsNone(d.detail_select_position(self.filled_heart_screen(missing=missing)))
+
+ def test_filled_favourite_survives_compressed_capture(self):
+  f=self.filled_heart_screen()
+  ok,encoded=cv2.imencode('.jpg',cv2.cvtColor(f,cv2.COLOR_RGB2BGR),[cv2.IMWRITE_JPEG_QUALITY,80])
+  self.assertTrue(ok)
+  decoded=cv2.cvtColor(cv2.imdecode(encoded,cv2.IMREAD_COLOR),cv2.COLOR_BGR2RGB)
+  self.assertIsNotNone(d.detail_select_position(decoded))
